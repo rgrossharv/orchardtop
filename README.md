@@ -12,23 +12,19 @@ parts so they make more sense on Apple Silicon.
 ## Why this exists
 
 Apple Silicon has one pool of memory. The CPU and GPU share it. There is no
-separate VRAM pool.
-
-Regular btop can make this hard to understand. It may look like the GPU has
-its own memory. It does not.
-
-OrchardTop shows all memory in one place: the Memory box. The GPU box shows
+separate VRAM pool. Regular btop makes this look a little weird, so it may look like the GPU has
+its own memory. It does not. OrchardTop shows all memory in one place: the Memory box. The GPU box shows
 GPU load and any power, clock, or temperature data that macOS gives us. It
 does not show a fake VRAM total or a confusing GPU memory number.
 
-This is a vibe-coded fork. It grew out of frustration with btop on Apple
+This is a VIBECODED fork. It grew out of frustration with btop on Apple
 Silicon and with [ASiTop](https://github.com/tlkh/asitop). ASiTop can be useful,
 but its Python setup, screen layout, and scaling were not what this project
 wanted. That is a matter of taste, not an attack on either project.
 
 ## What you need
 
-- An M1, M2, M3, or M4 Mac.
+- An M series Mac.
 - macOS.
 - Apple command line tools.
 
@@ -64,29 +60,6 @@ curl -fsSL https://raw.githubusercontent.com/rgrossharv/orchardtop/main/install.
 The installer checks that the Mac is Apple Silicon. It checks the downloaded
 file before it installs it. By default, it installs OrchardTop in
 `~/.local/bin`.
-
-## Build it
-
-Open Terminal. Go into this folder. Then run:
-
-```bash
-make
-```
-
-The finished app is here:
-
-```text
-bin/orchardtop
-```
-
-Run it with:
-
-```bash
-./bin/orchardtop
-```
-
-Press `q` to quit. Press `m` to open the menu. Press `p` or `P` to move
-through the layouts.
 
 ## Memory and swap
 
@@ -132,7 +105,7 @@ The included `fmt` code has its own license at
 [include/fmt/LICENSE.rst](include/fmt/LICENSE.rst).
 
 OrchardTop is not an official btop project. It is also not connected to Apple
-or ASiTop.
+or ASiTop. All code was written by 5.6 Luna XHigh and 5.6 Sol Medium
 
 ## More detail
 
