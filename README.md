@@ -38,6 +38,33 @@ If you do not have the command line tools, run this once:
 xcode-select --install
 ```
 
+## Install with Homebrew
+
+After the Homebrew tap is published, run:
+
+```bash
+brew install rgrossharv/orchardtop/orchardtop
+```
+
+You can also add the tap first. Then the shorter command works:
+
+```bash
+brew tap rgrossharv/orchardtop
+brew install orchardtop
+```
+
+## Install with curl
+
+After a release is published, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rgrossharv/orchardtop/main/install.sh | sh
+```
+
+The installer checks that the Mac is Apple Silicon. It checks the downloaded
+file before it installs it. By default, it installs OrchardTop in
+`~/.local/bin`.
+
 ## Build it
 
 Open Terminal. Go into this folder. Then run:

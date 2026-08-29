@@ -1,0 +1,41 @@
+name: Release OrchardTop
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Apple Silicon release
+    runs-on: macos-14
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check runner architecture
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Build OrchardTop
+        run: make QUIET=true
+
+      - name: Package OrchardTop
+        run: |
+          stage="$(mktemp -d)"
+          make QUIET=true DESTDIR="$stage" PREFIX=/usr/local install
+          tar -C "$stage/usr/local" -czf orchardtop-macos-arm64.tar.gz .
+          shasum -a 256 orchardtop-macos-arm64.tar.gz > checksums.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            orchardtop-macos-arm64.tar.gz \
+            checksums.txt \
+            --verify-tag \
+            --generate-notes
