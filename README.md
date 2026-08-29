@@ -38,9 +38,9 @@ If you do not have the command line tools, run this once:
 xcode-select --install
 ```
 
-## Install with Homebrew
+## Install with Homebrew (recommended)
 
-After the Homebrew tap is published, run:
+OrchardTop has a Homebrew tap. The easiest way to install it is:
 
 ```bash
 brew install rgrossharv/orchardtop/orchardtop
