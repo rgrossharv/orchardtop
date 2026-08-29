@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- OrchardTop icon, added in 2026. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#10131a"/>
+  <path d="M67 33c2-10 9-17 20-19-1 11-8 18-20 19Z" fill="#80c8ff"/>
+  <path d="M64 37c-21-13-42 2-42 27 0 27 18 48 42 48s42-21 42-48c0-25-21-40-42-27Z" fill="#6fc9b0"/>
+  <path d="M34 76h13l7-18 12 36 10-25 6 7h13" fill="none" stroke="#10131a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

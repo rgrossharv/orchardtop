@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -79,6 +81,12 @@ namespace Cpu {
 		return name;
 	}
 }
+
+#if !defined(__APPLE__)
+namespace Mem {
+	bool unified_memory = false;
+}
+#endif
 
 #ifdef GPU_SUPPORT
 namespace Gpu {

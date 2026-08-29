@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -265,7 +267,7 @@ namespace Cpu {
 namespace Mem {
 	extern string box;
 	extern int x, y, width, height, min_width, min_height;
-	extern bool has_swap, shown, redraw;
+	extern bool has_swap, shown, redraw, unified_memory;
 	const array mem_names { "used"s, "available"s, "cached"s, "free"s };
 	const array swap_names { "swap_used"s, "swap_free"s };
 	extern int disk_ios;

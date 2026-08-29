@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
+# Modified from btop for OrchardTop in 2026.
 #
-# CMake configuration for btop
+# CMake configuration for OrchardTop
 #
 
 cmake_minimum_required(VERSION 3.25)
@@ -10,9 +11,9 @@ if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
   message(FATAL_ERROR "In-source builds are not allowed")
 endif()
 
-project("btop"
-  DESCRIPTION "A monitor of resources"
-  HOMEPAGE_URL "https://github.com/aristocratos/btop"
+project("OrchardTop"
+  DESCRIPTION "An Apple Silicon system monitor based on btop"
+  HOMEPAGE_URL "https://github.com/rgrossharv/orchardtop"
   LANGUAGES CXX
 )
 
@@ -44,7 +45,7 @@ if(BTOP_STATIC AND NOT APPLE)
   set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 endif()
 
-add_executable(btop src/main.cpp)
+add_executable(orchardtop src/main.cpp)
 add_library(libbtop OBJECT
   src/btop.cpp
   src/btop_cli.cpp
@@ -58,11 +59,11 @@ add_library(libbtop OBJECT
   src/btop_tools.cpp
 )
 
-target_link_libraries(btop libbtop)
+target_link_libraries(orchardtop libbtop)
 
 if(BTOP_LTO)
   check_ipo_supported()
-  set_target_properties(btop PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
+  set_target_properties(orchardtop PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
   set_target_properties(libbtop PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
@@ -172,7 +173,7 @@ if(LINUX AND BTOP_GPU)
     unset(CMAKE_MODULE_PATH)
 
     # NOTE: This might be problematic in the future if other sub projects depend on this or if
-    # btop starts producing libraries
+    # OrchardTop starts producing libraries
     # Build a static ROCm library
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -215,7 +216,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "Midni
   # default one since all use the default ones RPATH
   if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     string(REGEX MATCH "^[0-9]+" GCC_VERSION_MAJOR "${CMAKE_CXX_COMPILER_VERSION}")
-    set_target_properties(btop PROPERTIES
+    set_target_properties(orchardtop PROPERTIES
       INSTALL_RPATH "/usr/local/lib/gcc${GCC_VERSION_MAJOR}"
       BUILD_WITH_INSTALL_RPATH TRUE
     )
@@ -255,23 +256,24 @@ find_program(LOWDOWN_EXECUTABLE lowdown)
 if(LOWDOWN_EXECUTABLE)
   # Custom target to compile Markdown to man page using lowdown
   add_custom_command(
-    OUTPUT btop.1
-    COMMAND lowdown -s -T man -o btop.1 ${CMAKE_CURRENT_SOURCE_DIR}/manpage.md
+    OUTPUT orchardtop.1
+	COMMAND lowdown -s -T man -o orchardtop.1 ${CMAKE_CURRENT_SOURCE_DIR}/manpage.md
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/manpage.md
     VERBATIM
   )
-  add_custom_target(generate_manpage ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/btop.1)
+  add_custom_target(generate_manpage ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/orchardtop.1)
   # Install the man page
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/btop.1" DESTINATION "share/man/man1")
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/orchardtop.1" DESTINATION "share/man/man1")
 else()
-  message(STATUS "Command 'lowdown' not found: skipping generating man page btop.1")
+  message(STATUS "Command 'lowdown' not found: skipping OrchardTop man page")
 endif()
 
-install(TARGETS btop RUNTIME)
-install(FILES "btop.desktop" DESTINATION "share/applications")
-install(FILES "Img/icon.png" DESTINATION "share/icons/hicolor/48x48/apps" RENAME "btop.png")
-install(FILES "Img/icon.svg" DESTINATION "share/icons/hicolor/scalable/apps" RENAME "btop.svg")
-install(DIRECTORY "themes" DESTINATION "share/btop")
+install(TARGETS orchardtop RUNTIME)
+install(FILES "README.md" "APPLE_SILICON.md" "LICENSE" "NOTICE" DESTINATION "share/doc/orchardtop")
+install(FILES "include/fmt/LICENSE.rst" DESTINATION "share/doc/orchardtop/third-party" RENAME "fmt-LICENSE.rst")
+install(FILES "orchardtop.desktop" DESTINATION "share/applications")
+install(FILES "Img/orchardtop.svg" DESTINATION "share/icons/hicolor/scalable/apps")
+install(DIRECTORY "themes" DESTINATION "share/orchardtop")
 
 include(CTest)
 if(BUILD_TESTING)

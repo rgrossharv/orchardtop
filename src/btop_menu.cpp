@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -217,7 +219,7 @@ namespace Menu {
 		{"Selected N", "Select new nice value for selected process."},
 		{"", " "},
 		{"", "For bug reporting and project updates, visit:"},
-		{"", "https://github.com/aristocratos/btop"},
+		{"", "https://github.com/rgrossharv/orchardtop"},
 	};
 
 	const vector<vector<vector<string>>> categories = {
@@ -226,8 +228,8 @@ namespace Menu {
 				"Set color theme.",
 				"",
 				"Choose from all theme files in (usually)",
-				"\"/usr/[local/]share/btop/themes\" and",
-				"\"~/.config/btop/themes\".",
+				"\"/usr/[local/]share/orchardtop/themes\" and",
+				"\"~/.config/orchardtop/themes\".",
 				"",
 				"\"Default\" for builtin default theme.",
 				"\"TTY\" for builtin 16-color theme.",

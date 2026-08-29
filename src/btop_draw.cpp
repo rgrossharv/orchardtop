@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -1071,6 +1073,8 @@ namespace Gpu {
 		auto& graph_symbol = (tty_mode ? "tty" : Config::getS("graph_symbol_gpu"));
 		auto& graph_bg = Symbols::graph_symbols.at((graph_symbol == "default" ? Config::getS("graph_symbol") + "_up" : graph_symbol + "_up")).at(6);
         auto single_graph = !Config::getB("gpu_mirror_graph");
+		const auto memory_label = "vram"s;
+		const auto memory_title = "VRAM"s;
 		string out;
 		int height = gpu_b_height_offsets[index] + 4;
 		out.reserve(width * height);
@@ -1165,7 +1169,7 @@ namespace Gpu {
 					* (1 + 2*(gpu.supported_functions.mem_total and gpu.supported_functions.mem_used) + 2*gpu.supported_functions.mem_utilization);
 
 				//? Used graph, memory section header, total vram
-				out += Theme::c("div_line") + Symbols::div_left + Symbols::h_line + Symbols::title_left + Fx::b + Theme::c("title") + "vram" + Theme::c("div_line") + Fx::ub + Symbols::title_right
+				out += Theme::c("div_line") + Symbols::div_left + Symbols::h_line + Symbols::title_left + Fx::b + Theme::c("title") + memory_label + Theme::c("div_line") + Fx::ub + Symbols::title_right
 					+  Symbols::h_line*(b_width/2-8) + Symbols::div_up + Mv::d(offset)+Mv::l(1) + Symbols::div_down + Mv::l(1)+Mv::u(1) + (Symbols::v_line + Mv::l(1)+Mv::u(1))*(offset-1) + Symbols::div_up
 					+  Symbols::h_line + Theme::c("title") + "Used:" + Theme::c("div_line")
 					+  Symbols::h_line*(b_width/2+b_width%2-9-used_memory_string.size()) + Theme::c("title") + used_memory_string + Theme::c("div_line") + Symbols::h_line + Symbols::div_right
@@ -1188,11 +1192,11 @@ namespace Gpu {
 			} else {
 				out += Theme::c("main_fg") + Mv::r(1);
 				if (gpu.supported_functions.mem_total)
-					out += "VRAM total:" + rjust(floating_humanizer(gpu.mem_total), b_width/(1 + gpu.supported_functions.mem_clock)-14);
-				else out += "VRAM usage:" + rjust(floating_humanizer(gpu.mem_used), b_width/(1 + gpu.supported_functions.mem_clock)-14);
+					out += memory_title + " total:" + rjust(floating_humanizer(gpu.mem_total), b_width/(1 + gpu.supported_functions.mem_clock)-14);
+				else out += memory_title + " usage:" + rjust(floating_humanizer(gpu.mem_used), b_width/(1 + gpu.supported_functions.mem_clock)-14);
 
 				if (gpu.supported_functions.mem_clock)
-					out += "   VRAM clock:" + rjust(to_string(gpu.mem_clock_speed) + " MHz", b_width/2-13);
+					out += "   " + memory_title + " clock:" + rjust(to_string(gpu.mem_clock_speed) + " MHz", b_width/2-13);
 			}
 		}
 
@@ -1349,7 +1353,9 @@ namespace Mem {
 		string up = (graph_height >= 2 ? Mv::l(mem_width - 2) + Mv::u(graph_height - 1) : "");
 		bool big_mem = mem_width > 21;
 
-		out += Mv::to(y + 1, x + 2) + Theme::c("title") + Fx::b + "Total:" + rjust(floating_humanizer(totalMem), mem_width - 9) + Fx::ub + Theme::c("main_fg");
+		const auto total_label = Mem::unified_memory ? "UMA Total:"s : "Total:"s;
+		out += Mv::to(y + 1, x + 2) + Theme::c("title") + Fx::b + total_label
+			+ rjust(floating_humanizer(totalMem), mem_width - (Mem::unified_memory ? 13 : 9)) + Fx::ub + Theme::c("main_fg");
 		vector<string> comb_names (mem_names.begin(), mem_names.end());
 		if (show_swap and has_swap and not swap_disk) comb_names.insert(comb_names.end(), swap_names.begin(), swap_names.end());
 		for (const auto& name : comb_names) {

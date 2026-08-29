@@ -1,3 +1,4 @@
+# Modified from btop for OrchardTop in 2026.
 name: Continuous Build Linux
 
 permissions: {}
@@ -85,11 +86,11 @@ jobs:
           GITHUB_SHA: "${{ github.sha }}"
         run: |
           GIT_HASH=$(git rev-parse --short "${GITHUB_SHA}")
-          FILENAME=btop-${TOOLCHAIN/linux-musl/}-$GIT_HASH
-          mv bin/btop bin/$FILENAME
+          FILENAME=orchardtop-${TOOLCHAIN/linux-musl/}-$GIT_HASH
+          mv bin/orchardtop bin/$FILENAME
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: btop-${{ matrix.toolchain }}
+          name: orchardtop-${{ matrix.toolchain }}
           path: '${{ github.workspace }}/bin/*'

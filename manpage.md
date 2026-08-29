@@ -1,20 +1,22 @@
-% btop(1) | User Commands
+% orchardtop(1) | User Commands
 %
-% 2025-05-01
+% 2026-08-29
+%
+% Modified from the btop manual for OrchardTop in 2026.
 
 # NAME
 
-btop - Resource monitor that shows usage and stats for processor, memory, disks, network, and processes.
+orchardtop - Apple Silicon system monitor based on btop.
 
 # SYNOPSIS
 
-**btop** [**-c** _file_] [**-d**] [**-f** _filter_] [**-l**] [**-p** _id_] [**-t**] [**-u** _ms_] [**\-\-force-utf**] [**\-\-themes-dir** _dir_]
+**orchardtop** [**-c** _file_] [**-d**] [**-f** _filter_] [**-l**] [**-p** _id_] [**-t**] [**-u** _ms_] [**\-\-force-utf**] [**\-\-themes-dir** _dir_]
 
-**btop** [**\-\-default-config** | {**-h** | **\-\-help**} | {**-V** | **\-\-version**}]
+**orchardtop** [**\-\-default-config** | {**-h** | **\-\-help**} | {**-V** | **\-\-version**}]
 
 # DESCRIPTION
 
-**btop** is a program that shows usage and stats for processor, memory, disks, network, and processes.
+**orchardtop** shows CPU, GPU, memory, swap, disks, network, and processes on Apple Silicon Macs.
 
 # OPTIONS
 
@@ -62,7 +64,7 @@ starting with two dashes ('-'). A summary of options is included below.
 
 # BUGS
 
-The upstream bug tracker can be found at https://github.com/aristocratos/btop/issues.
+This fork does not use the upstream btop issue tracker. See the project README.
 
 # SEE ALSO
 
@@ -70,4 +72,4 @@ The upstream bug tracker can be found at https://github.com/aristocratos/btop/is
 
 # AUTHOR
 
-**btop** was written by Jakob P. Liljenberg a.k.a. "Aristocratos".
+OrchardTop is based on btop, written by Jakob P. Liljenberg, also known as Aristocratos.

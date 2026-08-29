@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -345,7 +347,7 @@ namespace Tools {
 		if (auto it = map.find(key); it != map.end()) {
 			return it->second;
 		} else {
-			Logger::error("safeVal() called with invalid key: [{}] (Compile btop with DEBUG=true for more extensive logging!)", key);
+			Logger::error("safeVal() called with invalid key: [{}] (Compile OrchardTop with DEBUG=true for more logging.)", key);
 			return fallback;
 		}
 	};
@@ -366,7 +368,7 @@ namespace Tools {
 		if (index < vec.size()) {
 			return vec[index];
 		} else {
-			Logger::error("safeVal() called with invalid index: [{}] (Compile btop with DEBUG=true for more extensive logging!)", index);
+			Logger::error("safeVal() called with invalid index: [{}] (Compile OrchardTop with DEBUG=true for more logging.)", index);
 			return fallback;
 		}
 	};

@@ -1,3 +1,11 @@
+# Upstream btop history
+
+This file came from btop. It is kept so people can see the history and credit
+the original work. The entries below are about btop, not OrchardTop.
+
+OrchardTop changes start with version `1.4.7-orchard.1` and are described in
+the Git history.
+
 ## v1.4.7
 
 References | Description | Author(s)

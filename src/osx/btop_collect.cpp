@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -55,6 +57,7 @@ tab-size = 4
 #endif
 
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <future>
 #include <mutex>
@@ -280,6 +283,70 @@ namespace Gpu {
 			}
 		}
 
+		struct accelerator_stats {
+			long long device_utilization = -1;
+			long long renderer_utilization = -1;
+			long long tiler_utilization = -1;
+			bool valid = false;
+		};
+
+		static bool get_cf_uint64(CFDictionaryRef dict, CFStringRef key, uint64_t& value) {
+			if (not dict) return false;
+			CFTypeRef raw = (CFTypeRef)CFDictionaryGetValue(dict, key);
+			if (not raw or CFGetTypeID(raw) != CFNumberGetTypeID()) return false;
+
+			int64_t signed_value = 0;
+			if (not CFNumberGetValue((CFNumberRef)raw, kCFNumberSInt64Type, &signed_value) or signed_value < 0)
+				return false;
+			value = static_cast<uint64_t>(signed_value);
+			return true;
+		}
+
+		static bool get_cf_percent(CFDictionaryRef dict, CFStringRef key, long long& value) {
+			uint64_t raw = 0;
+			if (not get_cf_uint64(dict, key, raw) or raw > 100) return false;
+			value = static_cast<long long>(raw);
+			return true;
+		}
+
+		//? IOAccelerator is the reliable polling interface on current Apple Silicon
+		//? systems. It also works when IOReport subscriptions are unavailable to a
+		//? non-privileged terminal process.
+		static accelerator_stats get_accelerator_stats() {
+			accelerator_stats result;
+			io_iterator_t iter_raw = 0;
+			CFMutableDictionaryRef match_dict = IOServiceMatching("IOAccelerator");
+			if (not match_dict or IOServiceGetMatchingServices(kIOMainPortDefault, match_dict, &iter_raw) != kIOReturnSuccess)
+				return result;
+
+			IORef iter(iter_raw);
+			io_object_t entry_raw;
+			while ((entry_raw = IOIteratorNext(iter)) != 0) {
+				IORef entry(entry_raw);
+				CFMutableDictionaryRef properties_raw = nullptr;
+				if (IORegistryEntryCreateCFProperties(entry, &properties_raw, kCFAllocatorDefault, 0) != kIOReturnSuccess or not properties_raw)
+					continue;
+				CFRef<CFMutableDictionaryRef> properties(properties_raw);
+
+				auto performance = (CFDictionaryRef)CFDictionaryGetValue(properties, CFSTR("PerformanceStatistics"));
+				if (not performance or CFGetTypeID(performance) != CFDictionaryGetTypeID()) continue;
+
+				long long device_utilization = -1, renderer_utilization = -1, tiler_utilization = -1;
+				const bool got_device_utilization = get_cf_percent(performance, CFSTR("Device Utilization %"), device_utilization);
+				const bool got_renderer_utilization = get_cf_percent(performance, CFSTR("Renderer Utilization %"), renderer_utilization);
+				const bool got_tiler_utilization = get_cf_percent(performance, CFSTR("Tiler Utilization %"), tiler_utilization);
+
+				if (got_device_utilization)
+					result.device_utilization = max(result.device_utilization, device_utilization);
+				if (got_renderer_utilization)
+					result.renderer_utilization = max(result.renderer_utilization, renderer_utilization);
+				if (got_tiler_utilization)
+					result.tiler_utilization = max(result.tiler_utilization, tiler_utilization);
+				result.valid = result.valid or got_device_utilization or got_renderer_utilization or got_tiler_utilization;
+			}
+			return result;
+		}
+
 		bool init() {
 			if (initialized) return false;
 
@@ -294,27 +361,30 @@ namespace Gpu {
 			CFRef<CFDictionaryRef> gpu_chan(IOReportCopyChannelsInGroup(gpu_stats_group, gpu_perf_subgroup, 0, 0, 0));
 			CFRef<CFDictionaryRef> energy_chan(IOReportCopyChannelsInGroup(energy_group, nullptr, 0, 0, 0));
 
-			if (not gpu_chan.get() and not energy_chan.get()) {
-				Logger::info("Apple Silicon GPU: No IOReport channels found, GPU monitoring unavailable");
-				return false;
+			if (gpu_chan.get() or energy_chan.get()) {
+				//? Merge channels into a single subscription
+				if (gpu_chan.get() and energy_chan.get())
+					IOReportMergeChannels(gpu_chan, energy_chan, nullptr);
+				CFDictionaryRef base_chan = gpu_chan.get() ? gpu_chan.get() : energy_chan.get();
+
+				auto size = CFDictionaryGetCount(base_chan);
+				ior_chan = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, size, base_chan);
+
+				//? Create IOReport subscription
+				CFMutableDictionaryRef sub_dict = nullptr;
+				ior_sub = IOReportCreateSubscription(nullptr, ior_chan, &sub_dict, 0, nullptr);
+				if (sub_dict) CFRelease(sub_dict);
+				if (not ior_sub) {
+					Logger::warning("Apple Silicon GPU: IOReport subscription unavailable; using IOAccelerator statistics");
+					if (ior_chan) CFRelease(ior_chan);
+					ior_chan = nullptr;
+				}
+			} else {
+				Logger::info("Apple Silicon GPU: No IOReport channels found; trying IOAccelerator statistics");
 			}
 
-			//? Merge channels into a single subscription
-			if (gpu_chan.get() and energy_chan.get()) {
-				IOReportMergeChannels(gpu_chan, energy_chan, nullptr);
-			}
-			CFDictionaryRef base_chan = gpu_chan.get() ? gpu_chan.get() : energy_chan.get();
-
-			auto size = CFDictionaryGetCount(base_chan);
-			ior_chan = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, size, base_chan);
-
-			//? Create IOReport subscription
-			CFMutableDictionaryRef sub_dict = nullptr;
-			ior_sub = IOReportCreateSubscription(nullptr, ior_chan, &sub_dict, 0, nullptr);
-			if (not ior_sub) {
-				Logger::warning("Apple Silicon GPU: Failed to create IOReport subscription");
-				CFRelease(ior_chan);
-				ior_chan = nullptr;
+			if (not ior_sub and not get_accelerator_stats().valid) {
+				Logger::info("Apple Silicon GPU: IOAccelerator statistics unavailable, GPU monitoring unavailable");
 				return false;
 			}
 
@@ -324,9 +394,11 @@ namespace Gpu {
 
 			initialized = true;
 
-			//? Take initial sample for delta computation
-			prev_sample = IOReportCreateSamples(ior_sub, ior_chan, nullptr);
-			prev_sample_time = get_mach_time_ms();
+			//? Take initial sample for delta computation when IOReport is available.
+			if (ior_sub) {
+				prev_sample = IOReportCreateSamples(ior_sub, ior_chan, nullptr);
+				prev_sample_time = get_mach_time_ms();
+			}
 
 			//? Run init collect to populate names and supported functions
 			collect<1>(gpus.data());
@@ -410,34 +482,57 @@ namespace Gpu {
 				string chip = get_chip_name();
 				gpu_names[0] = chip + " GPU";
 
-				//? Power max (typical Apple Silicon GPU TDP ~15-20W)
-				gpus_slice[0].pwr_max_usage = 20000; // 20W in mW
-				gpu_pwr_total_max += gpus_slice[0].pwr_max_usage;
+				//? Apple does not publish a stable user-space GPU power ceiling.
+				//? The meter is scaled to the observed session peak below.
+				gpus_slice[0].pwr_max_usage = 1;
 
 				//? Temperature max
 				gpus_slice[0].temp_max = 110;
 
-				//? Memory total (unified memory architecture — GPU shares system RAM)
-				int64_t memsize = 0;
-				size_t size = sizeof(memsize);
-				if (sysctlbyname("hw.memsize", &memsize, &size, nullptr, 0) == 0)
-					gpus_slice[0].mem_total = memsize;
-
 				//? Supported functions
 				gpus_slice[0].supported_functions = {
 					.gpu_utilization = true,
-					.mem_utilization = true,
+					.mem_utilization = false,
 					.gpu_clock = not gpu_freqs.empty(),
 					.mem_clock = false,
 					.pwr_usage = true,
 					.pwr_state = false,
 					.temp_info = true,
-					.mem_total = true,
-					.mem_used = true,
+					.mem_total = false,
+					.mem_used = false,
 					.pcie_txrx = false,
 					.encoder_utilization = false,
 					.decoder_utilization = false
 				};
+			}
+
+			//? IOReport is optional on Apple Silicon: some macOS releases expose
+			//? its channels but reject subscriptions from ordinary terminal apps.
+			//? Keep the GPU visible using the public IOKit PerformanceStatistics
+			//? dictionary instead of dropping the entire GPU panel.
+			if (not ior_sub) {
+				auto accelerator = get_accelerator_stats();
+				if (not accelerator.valid) return false;
+
+				if constexpr (is_init) {
+					gpus_slice[0].supported_functions.gpu_clock = false;
+					gpus_slice[0].supported_functions.pwr_usage = false;
+				}
+
+				const auto gpu_utilization = accelerator.device_utilization >= 0
+					? accelerator.device_utilization
+					: accelerator.renderer_utilization >= 0
+						? accelerator.renderer_utilization
+						: accelerator.tiler_utilization;
+				if (gpu_utilization >= 0)
+					gpus_slice[0].gpu_percent.at("gpu-totals").push_back(gpu_utilization);
+
+				if (gpus_slice[0].supported_functions.temp_info and Config::getB("check_temp")) {
+					long long temp = get_gpu_temp_iohid();
+					if (temp > 0)
+						gpus_slice[0].temp.push_back(temp);
+				}
+				return true;
 			}
 
 			//? Take new IOReport sample and compute delta
@@ -477,7 +572,7 @@ namespace Gpu {
 				string channel = cfstring_to_string(IOReportChannelGetChannelName(item));
 
 				//? GPU utilization from residency states
-				if (group == "GPU Stats" and subgroup == "GPU Performance States" and channel == "GPUPH") {
+				if (group == "GPU Stats" and subgroup == "GPU Performance States") {
 					int32_t state_count = IOReportStateGetCount(item);
 					if (state_count <= 0) continue;
 
@@ -485,22 +580,21 @@ namespace Gpu {
 					int64_t active_residency = 0;
 					double weighted_freq = 0;
 
-					//? Find offset past IDLE/OFF/DOWN states
-					int offset = 0;
 					for (int32_t s = 0; s < state_count; s++) {
 						string name = cfstring_to_string(IOReportStateGetNameForIndex(item, s));
-						if (name == "IDLE" or name == "OFF" or name == "DOWN")
-							offset = s + 1;
 						total_residency += IOReportStateGetResidency(item, s);
 					}
 
 					int freq_count = static_cast<int>(gpu_freqs.size());
-					for (int32_t s = offset; s < state_count; s++) {
+					int active_state = 0;
+					for (int32_t s = 0; s < state_count; s++) {
+						string name = cfstring_to_string(IOReportStateGetNameForIndex(item, s));
+						if (name == "IDLE" or name == "OFF" or name == "DOWN") continue;
 						int64_t res = IOReportStateGetResidency(item, s);
 						active_residency += res;
-						int freq_idx = s - offset;
-						if (freq_idx < freq_count and active_residency > 0)
-							weighted_freq += static_cast<double>(res) * gpu_freqs[freq_idx];
+						if (active_state < freq_count)
+							weighted_freq += static_cast<double>(res) * gpu_freqs[active_state];
+						active_state++;
 					}
 
 					if (total_residency > 0) {
@@ -535,17 +629,29 @@ namespace Gpu {
 				}
 			}
 
+			//? Prefer the driver's live utilization value when available. It is
+			//? already normalized by AGX and avoids depending on IOReport state
+			//? ordering, which has changed between macOS releases.
+			auto accelerator = get_accelerator_stats();
+			const auto accelerator_utilization = accelerator.device_utilization >= 0
+				? accelerator.device_utilization
+				: accelerator.renderer_utilization >= 0
+					? accelerator.renderer_utilization
+					: accelerator.tiler_utilization;
+			if (accelerator_utilization >= 0) {
+				gpu_utilization = accelerator_utilization;
+				got_gpu_util = true;
+			}
+
 			//? Store GPU utilization
 			if (got_gpu_util) {
 				gpus_slice[0].gpu_percent.at("gpu-totals").push_back(gpu_utilization);
-				gpus_slice[0].mem_utilization_percent.push_back(gpu_utilization);
 			}
 
 			//? Store power usage (convert W to mW)
 			if (got_gpu_power) {
 				gpus_slice[0].pwr_usage = static_cast<long long>(round(gpu_power_watts * 1000.0));
-				if (gpus_slice[0].pwr_usage > gpus_slice[0].pwr_max_usage)
-					gpus_slice[0].pwr_max_usage = gpus_slice[0].pwr_usage;
+				gpus_slice[0].pwr_max_usage = max(gpus_slice[0].pwr_max_usage, gpus_slice[0].pwr_usage);
 				gpus_slice[0].gpu_percent.at("gpu-pwr-totals").push_back(
 					clamp(static_cast<long long>(round(static_cast<double>(gpus_slice[0].pwr_usage) * 100.0 / static_cast<double>(gpus_slice[0].pwr_max_usage))), 0ll, 100ll));
 			}
@@ -557,30 +663,9 @@ namespace Gpu {
 					gpus_slice[0].temp.push_back(temp);
 			}
 
-			//? Memory usage (unified memory — report system memory usage)
-			if (gpus_slice[0].supported_functions.mem_total) {
-				vm_size_t page_size;
-				mach_port_t mach_port = mach_host_self();
-				vm_statistics64_data_t vm_stats;
-				mach_msg_type_number_t count = sizeof(vm_stats) / sizeof(natural_t);
-				host_page_size(mach_port, &page_size);
-
-				if (host_statistics64(mach_port, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
-					long long used = (static_cast<int64_t>(vm_stats.active_count)
-						+ static_cast<int64_t>(vm_stats.inactive_count)
-						+ static_cast<int64_t>(vm_stats.wire_count)
-						+ static_cast<int64_t>(vm_stats.speculative_count)
-						+ static_cast<int64_t>(vm_stats.compressor_page_count)
-						- static_cast<int64_t>(vm_stats.purgeable_count)
-						- static_cast<int64_t>(vm_stats.external_page_count)) * static_cast<int64_t>(page_size);
-					if (used < 0) used = 0;
-					gpus_slice[0].mem_used = used;
-					if (gpus_slice[0].mem_total > 0) {
-						auto used_pct = static_cast<long long>(round(static_cast<double>(used) * 100.0 / static_cast<double>(gpus_slice[0].mem_total)));
-						gpus_slice[0].gpu_percent.at("gpu-vram-totals").push_back(clamp(used_pct, 0ll, 100ll));
-					}
-				}
-			}
+			//? Apple Silicon uses one shared memory pool. OrchardTop shows that
+			//? pool only in the Memory panel so the GPU panel cannot imply that
+			//? the machine has a separate VRAM pool.
 
 			return true;
 		}
@@ -601,6 +686,7 @@ namespace Gpu {
 		long long mem_usage_total = 0;
 		long long mem_total = 0;
 		long long pwr_total = 0;
+		gpu_pwr_total_max = 0;
 		for (auto& gpu : gpus) {
 			if (gpu.supported_functions.gpu_utilization and not gpu.gpu_percent.at("gpu-totals").empty())
 				avg += gpu.gpu_percent.at("gpu-totals").back();
@@ -610,6 +696,8 @@ namespace Gpu {
 				mem_total += gpu.mem_total;
 			if (gpu.supported_functions.pwr_usage)
 				pwr_total += gpu.pwr_usage;
+			if (gpu.supported_functions.pwr_usage)
+				gpu_pwr_total_max += max(1ll, gpu.pwr_max_usage);
 
 			//* Trim vectors if there are more values than needed for graphs
 			if (width != 0) {
@@ -1118,6 +1206,11 @@ namespace Cpu {
 
 namespace Mem {
 	bool has_swap = false;
+#if defined(__arm64__)
+	bool unified_memory = true;
+#else
+	bool unified_memory = false;
+#endif
 	vector<string> fstab;
 	fs::file_time_type fstab_time;
 	int disk_ios = 0;
@@ -1249,10 +1342,21 @@ namespace Mem {
 		vm_statistics64 p;
 		mach_msg_type_number_t info_size = HOST_VM_INFO64_COUNT;
 		if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&p, &info_size) == 0) {
-			mem.stats.at("free") = p.free_count * Shared::pageSize;
-			mem.stats.at("cached") = p.external_page_count * Shared::pageSize;
-			mem.stats.at("used") = (p.active_count + p.wire_count) * Shared::pageSize;
-			mem.stats.at("available") = Shared::totalMem - mem.stats.at("used");
+			const auto page_size = static_cast<uint64_t>(Shared::pageSize);
+			const auto pages_to_bytes = [page_size](uint64_t pages) { return pages * page_size; };
+			const auto wired = pages_to_bytes(p.wire_count);
+			const auto compressed = pages_to_bytes(p.compressor_page_count);
+			const auto app_memory = pages_to_bytes(p.internal_page_count);
+			const auto used = min(Shared::totalMem, app_memory + wired + compressed);
+
+			//? On macOS, internal pages are app/anonymous memory, wired pages
+			//? belong to the kernel and drivers, and compressor pages are still
+			//? resident physical memory. File-backed pages remain separately
+			//? visible as cached memory instead of being folded into used.
+			mem.stats.at("free") = pages_to_bytes(p.free_count);
+			mem.stats.at("cached") = pages_to_bytes(p.external_page_count);
+			mem.stats.at("used") = used;
+			mem.stats.at("available") = Shared::totalMem - used;
 		}
 
 		int mib[2] = {CTL_VM, VM_SWAPUSAGE};
@@ -1265,12 +1369,17 @@ namespace Mem {
 			mem.stats.at("swap_used") = swap.xsu_used;
 		}
 
-		if (show_swap and mem.stats.at("swap_total") > 0) {
+		if (show_swap) {
 			for (const auto &name : swap_names) {
-				mem.percent.at(name).push_back(round((double)mem.stats.at(name) * 100 / mem.stats.at("swap_total")));
+				const auto percent = mem.stats.at("swap_total") > 0
+					? round((double)mem.stats.at(name) * 100 / mem.stats.at("swap_total"))
+					: 0;
+				mem.percent.at(name).push_back(percent);
 				while (cmp_greater(mem.percent.at(name).size(), width * 2))
 					mem.percent.at(name).pop_front();
 			}
+			//? macOS creates swap files only when it needs them. Keep the Swap
+			//? rows visible at 0 B so users can always find the metric.
 			has_swap = true;
 		} else
 			has_swap = false;

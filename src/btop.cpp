@@ -1,5 +1,7 @@
 /* Copyright 2021 Aristocratos (jakob@qvantnet.com)
 
+   Modified for OrchardTop in 2026.
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -87,14 +89,14 @@ using namespace std::literals;
 
 namespace Global {
 	const vector<array<string, 2>> Banner_src = {
-		{"#E62525", "██████╗ ████████╗ ██████╗ ██████╗"},
-		{"#CD2121", "██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗   ██╗    ██╗"},
-		{"#B31D1D", "██████╔╝   ██║   ██║   ██║██████╔╝ ██████╗██████╗"},
-		{"#9A1919", "██╔══██╗   ██║   ██║   ██║██╔═══╝  ╚═██╔═╝╚═██╔═╝"},
-		{"#801414", "██████╔╝   ██║   ╚██████╔╝██║        ╚═╝    ╚═╝"},
-		{"#000000", "╚═════╝    ╚═╝    ╚═════╝ ╚═╝"},
+		{"#8AD49D", "╭──────────────────────────╮"},
+		{"#71C7A1", "│          ▄▄              │"},
+		{"#57B8A5", "│       ▄████▄             │"},
+		{"#3DA9A9", "│      ████████            │"},
+		{"#3099B6", "│       ▀████▀             │"},
+		{"#2688C2", "╰────── ORCHARDTOP ────────╯"},
 	};
-	const string Version = "1.4.7";
+	const string Version = "1.4.7-orchard.1";
 
 	int coreCount;
 	string overlay;
@@ -836,7 +838,7 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 	if (Global::real_uid != Global::set_uid) {
 		if (seteuid(Global::real_uid) != 0) {
 			Global::real_uid = Global::set_uid;
-			Global::exit_error_msg = "Failed to change effective user ID. Unset btop SUID bit to ensure security on this system. Quitting!";
+			Global::exit_error_msg = "Failed to change effective user ID. Unset the OrchardTop SUID bit to keep this system safe. Quitting!";
 			clean_quit(1);
 		}
 	}
@@ -866,7 +868,7 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 			Config::conf_file = cli.config_file.value();
 		} else if (config_dir.has_value()) {
 			Config::conf_dir = config_dir.value();
-			Config::conf_file = Config::conf_dir / "btop.conf";
+			Config::conf_file = Config::conf_dir / "orchardtop.conf";
 
 			auto log_file = Config::get_log_file();
 			if (log_file.has_value()) {
@@ -884,7 +886,7 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 		}
 	}
 
-	//? Try to find global btop theme path relative to binary path
+	//? Try to find the global OrchardTop theme path relative to the binary path
 #ifdef __linux__
 	{ 	std::error_code ec;
 		Global::self_path = fs::read_symlink("/proc/self/exe", ec).remove_filename();
@@ -911,12 +913,12 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 	}
 #endif
 	if (std::error_code ec; not Global::self_path.empty()) {
-		Theme::theme_dir = fs::canonical(Global::self_path / "../share/btop/themes", ec);
+		Theme::theme_dir = fs::canonical(Global::self_path / "../share/orchardtop/themes", ec);
 		if (ec or not fs::is_directory(Theme::theme_dir) or access(Theme::theme_dir.c_str(), R_OK) == -1) Theme::theme_dir.clear();
 	}
 	//? If relative path failed, check two most common absolute paths
 	if (Theme::theme_dir.empty()) {
-		for (auto theme_path : {"/usr/local/share/btop/themes", "/usr/share/btop/themes"}) {
+		for (auto theme_path : {"/usr/local/share/orchardtop/themes", "/usr/share/orchardtop/themes"}) {
 			if (fs::is_directory(fs::path(theme_path)) and access(theme_path, R_OK) != -1) {
 				Theme::theme_dir = fs::path(theme_path);
 				break;
@@ -1003,7 +1005,7 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 
 	//? Initialize terminal and set options
 	if (not Term::init()) {
-		Global::exit_error_msg = "No tty detected!\nbtop++ needs an interactive shell to run.";
+		Global::exit_error_msg = "No terminal detected!\nOrchardTop needs an interactive shell to run.";
 		clean_quit(1);
 	}
 

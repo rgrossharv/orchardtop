@@ -1,59 +1,38 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Tell us when OrchardTop does not work
 labels: bug
-
 ---
 
-**Read the README.md and search for similar issues before posting a bug report!**
+<!-- Modified from the btop bug form for OrchardTop in 2026. -->
 
-<!-- Any bug that can be solved by just reading the [prerequisites](https://github.com/aristocratos/btop#prerequisites) section of the README will likely be ignored. -->
+Please read the README first. Please also check if someone already reported
+the same problem.
 
-**Describe the bug**
+## What went wrong?
 
-<!-- A clear and concise description of what the bug is. -->
+Tell us what you saw.
 
-**To Reproduce**
+## What did you expect?
 
-<!-- Steps to reproduce the behavior. ->
+Tell us what you thought would happen.
 
-**Expected behavior**
+## How can we see the problem?
 
-<!-- A clear and concise description of what you expected to happen. -->
+List the steps.
 
-**Screenshots**
+## Your Mac
 
-<!-- If applicable, add screenshots to help explain your problem. -->
+- OrchardTop version: run `./bin/orchardtop --version`
+- Mac model:
+- Chip, such as M1 or M4:
+- macOS version:
+- Terminal app:
+- Terminal size:
 
-**Info (please complete the following information):**
- - btop++ version: `btop --version`
-   - If using snap: `snap info btop`
- - Binary: [self compiled or static binary from release]
- - Architecture: [x86_64, aarch64, etc.] `uname -m`
- - Platform: [Linux, FreeBSD, OsX]
- - (Linux) Kernel: `uname -r`
- - (OSX/FreeBSD) Os release version:
- - Terminal used:
- - Font used:
+## Helpful extras
 
-**Additional context**
+Add a screenshot if it helps. If OrchardTop made a log, copy the useful part
+from `~/.local/state/orchardtop.log`.
 
-<!-- Contents of `~/.local/state/btop.log` -->
-
-<!-- Note: The snap uses: `~/snap/btop/current/.local/state/btop.log` -->
-
-<!-- (try running btop with `--debug` flag if btop.log is empty) -->
-
-**GDB Backtrace**
-
-<!-- If btop++ is crashing at start the following steps could be helpful: -->
-
-<!-- (Extra helpful if compiled with `make OPTFLAGS="-O0 -g"`) -->
-
-<!-- 1. run (linux): `gdb btop` (macos): `lldb btop` -->
-
-<!-- 2. `r` to run, wait for crash and press enter if prompted, CTRL+L to clear screen if needed. -->
-
-<!-- 3. (gdb): `thread apply all bt` (lldb): `bt all` to get backtrace for all threads -->
-
-<!-- 4. Copy and paste the backtrace here: -->
+You can start OrchardTop with `--debug` to put more detail in the log.

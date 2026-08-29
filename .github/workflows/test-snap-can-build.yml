@@ -1,35 +1,10 @@
-name: 🧪 Test snap can be built on x86_64
+# Inherited from btop. Kept manual-only because OrchardTop targets Apple Silicon.
+name: Inherited btop snap check (manual only)
 
 permissions: {}
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    tags-ignore:
-      - '*.*'
-    paths:
-      - 'src/**'
-      - '!src/osx/**'
-      - '!src/freebsd/**'
-      - '!src/netbsd/**'
-      - '!src/openbsd/**'
-      - 'include/**'
-      - 'Makefile'
-      - '.github/workflows/test-snap-can-build.yml'
-      - 'snap/snapcraft.yaml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - '!src/osx/**'
-      - '!src/freebsd/**'
-      - '!src/netbsd/**'
-      - '!src/openbsd/**'
-      - 'include/**'
-      - 'Makefile'
-      - '.github/workflows/test-snap-can-build.yml'
-      - 'snap/snapcraft.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

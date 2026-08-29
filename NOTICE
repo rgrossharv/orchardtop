@@ -1,0 +1,14 @@
+OrchardTop
+Copyright 2026 Ryland Gross
+
+This product is based on btop, a resource monitor created by Aristocratos
+and its contributors: https://github.com/aristocratos/btop
+
+The original btop code and this derivative work are distributed under the
+Apache License, Version 2.0. See LICENSE.
+
+OrchardTop changes the project name, build output, documentation, presets,
+and Apple Silicon collection and display behavior. Changed source files carry
+a modification notice. The Git history shows the full changes.
+
+The bundled fmt source has its own license in include/fmt/LICENSE.rst.

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# OrchardTop desktop entry, added in 2026.
+
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=OrchardTop
+GenericName=System Monitor
+Comment=Apple Silicon system monitor based on btop
+Icon=orchardtop
+Exec=orchardtop
+Terminal=true
+Categories=System;Monitor;ConsoleOnly;
+Keywords=system;process;task;apple;silicon;gpu;memory;swap;

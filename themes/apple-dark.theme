@@ -1,0 +1,83 @@
+# Theme: apple-dark
+# Apple Silicon oriented dark theme
+# SPDX-License-Identifier: Apache-2.0
+# Added for OrchardTop in 2026.
+
+# Main bg
+theme[main_bg]="#10131a"
+
+# Main text color
+theme[main_fg]="#e8edf7"
+
+# Title color for boxes
+theme[title]="#f4f7ff"
+
+# Highlight color for keyboard shortcuts
+theme[hi_fg]="#80c8ff"
+
+# Background color of selected item in processes box
+theme[selected_bg]="#26344d"
+
+# Foreground color of selected item in processes box
+theme[selected_fg]="#ffffff"
+
+# Color of inactive/disabled text
+theme[inactive_fg]="#5f6b80"
+
+# Color of text appearing on top of graphs
+theme[graph_text]="#80c8ff"
+
+# Misc colors for processes box including mini cpu graphs
+theme[proc_misc]="#b79cff"
+
+# Box outline colors
+theme[cpu_box]="#5d9cff"
+theme[mem_box]="#6fc9b0"
+theme[net_box]="#80c8ff"
+theme[proc_box]="#b79cff"
+theme[div_line]="#344158"
+
+# Temperature graph colors
+theme[temp_start]="#6fc9b0"
+theme[temp_mid]="#ffd166"
+theme[temp_end]="#ff6b8a"
+
+# CPU graph colors
+theme[cpu_start]="#6fc9b0"
+theme[cpu_mid]="#80c8ff"
+theme[cpu_end]="#b79cff"
+
+# Mem/Disk free meter
+theme[free_start]="#6fc9b0"
+theme[free_mid]="#80c8ff"
+theme[free_end]="#ff6b8a"
+
+# Mem/Disk cached meter
+theme[cached_start]="#6fc9b0"
+theme[cached_mid]="#80c8ff"
+theme[cached_end]="#b79cff"
+
+# Mem/Disk available meter
+theme[available_start]="#6fc9b0"
+theme[available_mid]="#80c8ff"
+theme[available_end]="#b79cff"
+
+# Mem/Disk used meter
+theme[used_start]="#6fc9b0"
+theme[used_mid]="#ffd166"
+theme[used_end]="#ff6b8a"
+
+# Download graph colors
+theme[download_start]="#6fc9b0"
+theme[download_mid]="#80c8ff"
+theme[download_end]="#b79cff"
+
+# Upload graph colors
+theme[upload_start]="#b79cff"
+theme[upload_mid]="#80c8ff"
+theme[upload_end]="#6fc9b0"
+
+# Process box color gradient
+theme[process_start]="#80c8ff"
+theme[process_mid]="#b79cff"
+theme[process_end]="#ff6b8a"
