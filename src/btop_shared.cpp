@@ -34,6 +34,10 @@ namespace fs = std::filesystem;
 namespace rng = std::ranges;
 using namespace Tools;
 
+namespace Power {
+	power_info current_power;
+}
+
 namespace Cpu {
     std::optional<std::string> container_engine;
 

@@ -18,6 +18,8 @@ Memory box shows the whole truth in one place.
 - GPU use comes from IOReport when it works.
 - If IOReport does not work, GPU use comes from the Apple graphics driver.
 - GPU power and temperature only appear when macOS gives useful data.
+- The CPU panel includes a power line for CPU, GPU, ANE, DRAM, display, media,
+  residual system draw, their exposed subtotal, and the board total.
 
 OrchardTop does not claim to know how much memory belongs only to the GPU.
 macOS does not give normal apps a simple and stable answer for every Mac and
@@ -27,7 +29,7 @@ every macOS version.
 
 ```bash
 make
-./bin/orchardtop
+./otop
 ```
 
 GPU support turns on by itself on an Apple Silicon build.
@@ -40,3 +42,8 @@ Other presets show the GPU alone or next to CPU, memory, or processes.
 Apple does not publish one fixed GPU power limit for this tool to use. The
 power bar compares the current reading with the largest reading seen since
 OrchardTop started. The watts number is still the live reading.
+
+The Apple power line labels the exposed component subtotal as `SUM` and the
+AppleSMC board reading as `TOTAL`. On battery, OrchardTop uses `TOTAL` for the
+live drain value and can derive a remaining-time estimate from the raw battery
+capacity and voltage when macOS does not provide an ETA.

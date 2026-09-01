@@ -566,6 +566,32 @@ namespace Cpu {
 	vector<Draw::Graph> gpu_temp_graphs;
 	vector<Draw::Graph> gpu_mem_graphs;
 
+	static string power_summary(const Power::power_info& power, const int available_width) {
+		const auto watts = [](const float value) -> string {
+			return value >= 0.0f ? fmt::format("{:.1f}", value) : "-"s;
+		};
+		const auto compact_watts = [&watts](const float value) {
+			auto result = watts(value);
+			if (result.starts_with("0.")) result.erase(0, 1);
+			return result;
+		};
+		const bool total_is_estimate = power.total_is_estimate;
+
+		string summary;
+		if (available_width >= 86) {
+			summary = fmt::format("PWR CPU {}W GPU {}W ANE {}W RAM {}W DISP {}W MED {}W OTHER {}W SUM {}W {} {}W",
+				watts(power.cpu_watts), watts(power.gpu_watts), watts(power.ane_watts), watts(power.dram_watts),
+				watts(power.display_watts), watts(power.media_watts), watts(power.other_watts),
+				watts(power.component_total_watts), total_is_estimate ? "EST" : "TOTAL", watts(power.total_watts));
+		} else {
+			summary = fmt::format("P C{} G{} A{} R{} D{} M{} O{} {}{}W",
+				compact_watts(power.cpu_watts), compact_watts(power.gpu_watts), compact_watts(power.ane_watts), compact_watts(power.dram_watts),
+				compact_watts(power.display_watts), compact_watts(power.media_watts), compact_watts(power.other_watts),
+				total_is_estimate ? "E" : "T", watts(power.total_watts));
+		}
+		return uresize(summary, max(1, available_width));
+	}
+
     string draw(
 		const cpu_info& cpu,
 #if defined(GPU_SUPPORT)
@@ -899,11 +925,13 @@ namespace Cpu {
 			throw std::runtime_error("graphs, clock, meter : " + string{e.what()});
 		}
 
-		int max_row = b_height - 3; // Subtracting one extra row for the load average (and power if enabled)
 		int n_gpus_to_show = 0;
 	#ifdef GPU_SUPPORT
 		n_gpus_to_show = show_gpu ? (gpus.size() - (gpu_always ? 0 : Gpu::shown)) : 0;
 	#endif
+		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available)
+			and b_width >= 40 and b_height >= 8;
+		int max_row = b_height - 3 - (show_power_summary ? 1 : 0); // Reserve rows for load average and power summary.
 		max_row -= n_gpus_to_show;
 
 		auto is_cpu_enabled = [&cpu](const std::int32_t num) -> bool {
@@ -972,6 +1000,16 @@ namespace Cpu {
 
 			int len = load_avg_pre.size() + load_avg.size();
 			out += Mv::to(b_y + cy, b_x + 1) + string(max(b_width - len - 2, 0), ' ') + Theme::c("main_fg") + Fx::b + load_avg_pre + Fx::ub + load_avg;
+		}
+
+		//? macOS power summary. Component values come from IOReport energy
+		//? deltas; TOTAL is the board-level SMC reading and is not a sum of
+		//? the component counters.
+		if (show_power_summary) {
+			const auto power_line = power_summary(Power::current_power, b_width - 2);
+			const int power_row = b_height - 3 - n_gpus_to_show;
+			out += Mv::to(b_y + power_row, b_x + 1) + Theme::c("main_fg") + Fx::b
+				+ ljust(power_line, b_width - 2) + Fx::ub;
 		}
 
 	#ifdef GPU_SUPPORT
@@ -2331,13 +2369,23 @@ namespace Draw {
 		#else
 			height = max(8, (int)ceil((double)Term::height * (trim(boxes) == "cpu" ? 100 : height_p) / 100));
 		#endif
+		#if defined(__APPLE__) && defined(__arm64__)
+			// Leave one extra interior row for the Apple power summary while
+			// keeping the normal all-boxes layout usable on small terminals.
+			if (trim(boxes) != "cpu" and height < Term::height) ++height;
+		#endif
 			x = 1;
 			y = cpu_bottom ? Term::height - height + 1 : 1;
+		#if defined(__APPLE__) && defined(__arm64__)
+			constexpr int power_extra_rows = 1;
+		#else
+			constexpr int power_extra_rows = 0;
+		#endif
 
 		#ifdef GPU_SUPPORT
-			b_columns = max(2, (int)ceil((double)(Shared::coreCount + 1) / (height - gpus_extra_height - 5)));
+			b_columns = max(2, (int)ceil((double)(Shared::coreCount + 1) / (height - gpus_extra_height - 5 - power_extra_rows)));
 		#else
-			b_columns = max(1, (int)ceil((double)(Shared::coreCount + 1) / (height - 5)));
+			b_columns = max(1, (int)ceil((double)(Shared::coreCount + 1) / (height - 5 - power_extra_rows)));
 		#endif
 			if (b_columns * (21 + 12 * show_temp) < width - (width / 3)) {
 				b_column_size = 2;
@@ -2358,9 +2406,9 @@ namespace Draw {
 			if (b_column_size == 0) b_width = (8 + 6 * show_temp) * b_columns + 1;
 		#ifdef GPU_SUPPORT
 			//gpus_extra_height = max(0, gpus_extra_height - 1);
-			b_height = min(height - 2, (int)ceil((double)Shared::coreCount / b_columns) + 4 + gpus_extra_height);
+			b_height = min(height - 2, (int)ceil((double)Shared::coreCount / b_columns) + 4 + gpus_extra_height + power_extra_rows);
 		#else
-			b_height = min(height - 2, (int)ceil((double)Shared::coreCount / b_columns) + 4);
+			b_height = min(height - 2, (int)ceil((double)Shared::coreCount / b_columns) + 4 + power_extra_rows);
 		#endif
 
 			b_x = x + width - b_width - 1;

@@ -110,6 +110,32 @@ namespace Shared {
 #endif
 }
 
+namespace Power {
+	//* macOS power readings. A negative value means that the component is not
+	//* available on this machine or on this macOS release.
+	struct power_info {
+		float cpu_watts = -1.0f;
+		float gpu_watts = -1.0f;
+		float ane_watts = -1.0f;
+		float dram_watts = -1.0f;
+		float display_watts = -1.0f;
+		float media_watts = -1.0f;
+		float other_watts = -1.0f;
+		float component_total_watts = -1.0f;
+		float total_watts = -1.0f;
+		bool components_available = false;
+		bool total_available = false;
+		bool total_is_estimate = false;
+	};
+
+	extern power_info current_power;
+
+#ifdef __APPLE__
+	void refresh();
+	std::optional<long> estimate_battery_seconds(float watts);
+#endif
+}
+
 #if defined(GPU_SUPPORT)
 
 namespace Gpu {

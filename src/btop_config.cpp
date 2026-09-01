@@ -172,7 +172,7 @@ namespace Config {
 
 		{"show_uptime", 		"#* Shows the system uptime in the CPU box."},
 
-		{"show_cpu_watts",		"#* Shows the CPU package current power consumption in watts. Requires running `make setcap` or `make setuid` or running with sudo."},
+		{"show_cpu_watts",		"#* Shows the CPU component's current power consumption in watts when macOS exposes it. On Linux, extended permissions may be required."},
 
 		{"check_temp", 			"#* Show cpu temperature."},
 
@@ -273,7 +273,13 @@ namespace Config {
 	};
 
 	std::unordered_map<std::string_view, string> strings = {
-		{"color_theme", "Default"},
+		{"color_theme",
+#if defined(__APPLE__) && defined(__arm64__)
+			"apple-dark"
+#else
+			"Default"
+#endif
+		},
 		{"shown_boxes", "cpu mem net proc"},
 		{"graph_symbol", "braille"},
 		{"disable_presets", "Off"},

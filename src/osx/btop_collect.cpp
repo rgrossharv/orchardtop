@@ -60,6 +60,7 @@ tab-size = 4
 #include <cstring>
 #include <fstream>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <numeric>
 #include <ranges>
@@ -164,6 +165,70 @@ struct IORef {
 	io_object_t* ptr() { return &ref; }
 };
 
+namespace Power {
+	static bool get_cf_double(CFDictionaryRef dict, CFStringRef key, double& value) {
+		if (not dict) return false;
+		CFTypeRef raw = (CFTypeRef)CFDictionaryGetValue(dict, key);
+		if (not raw or CFGetTypeID(raw) != CFNumberGetTypeID()) return false;
+		return CFNumberGetValue((CFNumberRef)raw, kCFNumberDoubleType, &value);
+	}
+
+	void refresh() {
+		static std::unique_ptr<Cpu::SMCConnection> smc;
+		try {
+			if (not smc) smc = std::make_unique<Cpu::SMCConnection>();
+			const double watts = smc->getPowerWatts();
+			if (std::isfinite(watts) and watts >= 0.0 and watts < 1000.0) {
+				// PSTR is a board-level reading. A small amount of smoothing keeps
+				// the total readable while preserving changes in workload.
+				constexpr double alpha = 0.35;
+				const double previous = current_power.total_watts;
+				current_power.total_watts = static_cast<float>(previous < 0.0 ? watts : previous * (1.0 - alpha) + watts * alpha);
+				current_power.total_available = true;
+				current_power.total_is_estimate = false;
+			}
+		} catch (const std::exception&) {
+			// AppleSMC is optional on virtual machines and some future Macs.
+			smc.reset();
+		}
+	}
+
+	std::optional<long> estimate_battery_seconds(const float watts) {
+		if (not std::isfinite(watts) or watts <= 0.0f) return std::nullopt;
+
+		const auto battery_service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+		if (battery_service == 0) return std::nullopt;
+		IORef battery(battery_service);
+
+		CFMutableDictionaryRef properties_raw = nullptr;
+		if (IORegistryEntryCreateCFProperties(battery, &properties_raw, kCFAllocatorDefault, 0) != kIOReturnSuccess or not properties_raw)
+			return std::nullopt;
+		CFRef<CFMutableDictionaryRef> properties(properties_raw);
+
+		double current_capacity_mAh = 0.0;
+		double max_capacity_mAh = 0.0;
+		double current_percent = 0.0;
+		double voltage_mV = 0.0;
+		const bool got_current_capacity = get_cf_double(properties, CFSTR("AppleRawCurrentCapacity"), current_capacity_mAh);
+		const bool got_max_capacity = get_cf_double(properties, CFSTR("AppleRawMaxCapacity"), max_capacity_mAh);
+		const bool got_current_percent = get_cf_double(properties, CFSTR("CurrentCapacity"), current_percent);
+		const bool got_voltage = get_cf_double(properties, CFSTR("Voltage"), voltage_mV);
+
+		if (not got_voltage or voltage_mV <= 0.0) return std::nullopt;
+		if (not got_current_capacity and got_max_capacity and got_current_percent)
+			current_capacity_mAh = max_capacity_mAh * current_percent / 100.0;
+		if ((not got_current_capacity and not (got_max_capacity and got_current_percent)) or current_capacity_mAh <= 0.0)
+			return std::nullopt;
+
+		// Capacity is in mAh and voltage in mV, so this produces Wh.
+		const double remaining_wh = current_capacity_mAh * voltage_mV / 1'000'000.0;
+		const double seconds = remaining_wh / static_cast<double>(watts) * 3600.0;
+		if (not std::isfinite(seconds) or seconds <= 0.0 or seconds > static_cast<double>(numeric_limits<long>::max()))
+			return std::nullopt;
+		return static_cast<long>(round(seconds));
+	}
+} // namespace Power
+
 //? --------------------------------------------------- FUNCTIONS -----------------------------------------------------
 
 namespace Cpu {
@@ -222,6 +287,7 @@ namespace Gpu {
 		//? IOReport subscription state
 		IOReportSubscriptionRef ior_sub = nullptr;
 		CFMutableDictionaryRef ior_chan = nullptr;
+		CFMutableDictionaryRef ior_sub_chan = nullptr;
 		CFDictionaryRef prev_sample = nullptr;
 		uint64_t prev_sample_time = 0;
 
@@ -347,6 +413,135 @@ namespace Gpu {
 			return result;
 		}
 
+		struct energy_totals {
+			double cpu_primary = 0.0, cpu_fallback = 0.0;
+			double gpu_primary = 0.0, gpu_fallback = 0.0, gpu_sram = 0.0;
+			double ane_primary = 0.0, ane_fallback = 0.0;
+			double dram_primary = 0.0, dram_fallback = 0.0;
+			double display = 0.0, media = 0.0, other = 0.0;
+			bool cpu_primary_seen = false, cpu_fallback_seen = false;
+			bool gpu_primary_seen = false, gpu_fallback_seen = false, gpu_sram_seen = false;
+			bool ane_primary_seen = false, ane_fallback_seen = false;
+			bool dram_primary_seen = false, dram_fallback_seen = false;
+			bool display_seen = false, media_seen = false, other_seen = false;
+		};
+
+		static bool energy_in_joules(CFDictionaryRef item, double& energy) {
+			const auto unit = cfstring_to_string(IOReportChannelGetUnitLabel(item));
+			const auto value = IOReportSimpleGetIntegerValue(item, 0);
+			if (value < 0) return false;
+
+			energy = static_cast<double>(value);
+			if (unit.find("nJ") != string::npos)
+				energy /= 1e9;
+			else if (unit.find("uJ") != string::npos or unit.find("µJ") != string::npos or unit.find("\xc2\xb5J") != string::npos)
+				energy /= 1e6;
+			else if (unit.find("mJ") != string::npos)
+				energy /= 1e3;
+			else if (unit == "J" or unit == "joules") {
+				// Already in joules.
+			} else {
+				return false;
+			}
+			return true;
+		}
+
+		static void collect_energy(CFDictionaryRef item, energy_totals& totals) {
+			if (cfstring_to_string(IOReportChannelGetGroup(item)) != "Energy Model") return;
+
+			double energy = 0.0;
+			if (not energy_in_joules(item, energy)) return;
+			const auto channel = cfstring_to_string(IOReportChannelGetChannelName(item));
+
+			// Prefer Apple's aggregate channels when they are present. Older
+			// macOS releases expose the same domains as numbered channels.
+			if (channel == "CPU Energy") {
+				totals.cpu_primary += energy;
+				totals.cpu_primary_seen = true;
+			} else if (channel.starts_with("CPU") or channel.starts_with("ECPU") or channel.starts_with("PCPU")
+				or channel.starts_with("MCPU") or channel.starts_with("SCPU")) {
+				totals.cpu_fallback += energy;
+				totals.cpu_fallback_seen = true;
+			} else if (channel == "GPU Energy") {
+				totals.gpu_primary += energy;
+				totals.gpu_primary_seen = true;
+			} else if (channel == "GPU SRAM") {
+				totals.gpu_sram += energy;
+				totals.gpu_sram_seen = true;
+			} else if (channel == "GPU") {
+				totals.gpu_fallback += energy;
+				totals.gpu_fallback_seen = true;
+			} else if (channel == "ANE Energy") {
+				totals.ane_primary += energy;
+				totals.ane_primary_seen = true;
+			} else if (channel == "ANE" or channel.starts_with("ANE")) {
+				totals.ane_fallback += energy;
+				totals.ane_fallback_seen = true;
+			} else if (channel == "DRAM Energy") {
+				totals.dram_primary += energy;
+				totals.dram_primary_seen = true;
+			} else if (channel == "DRAM" or channel.starts_with("DRAM")) {
+				totals.dram_fallback += energy;
+				totals.dram_fallback_seen = true;
+			} else if (channel == "DISP" or channel == "DISPEXT" or channel.starts_with("DISP")) {
+				totals.display += energy;
+				totals.display_seen = true;
+			} else if (channel == "ISP" or channel == "AVE" or channel == "VDEC" or channel == "VENC") {
+				totals.media += energy;
+				totals.media_seen = true;
+			} else {
+				// This includes SoC fabric, DCS, memory-system, and PCIe
+				// channels. Keep them in a residual bucket rather than hiding
+				// them or double-counting them in a named domain.
+				totals.other += energy;
+				totals.other_seen = true;
+			}
+		}
+
+		static void update_power(float& destination, const double energy, const double seconds) {
+			if (not std::isfinite(energy) or not std::isfinite(seconds) or seconds <= 0.0) return;
+			const double watts = max(0.0, energy / seconds);
+			constexpr double alpha = 0.35;
+			destination = static_cast<float>(destination < 0.0f ? watts : destination * (1.0 - alpha) + watts * alpha);
+		}
+
+		static void publish_energy(const energy_totals& totals, const uint64_t dt) {
+			const double seconds = static_cast<double>(dt) / 1000.0;
+			const double cpu = totals.cpu_primary_seen ? totals.cpu_primary : totals.cpu_fallback;
+			const double gpu = (totals.gpu_primary_seen ? totals.gpu_primary : totals.gpu_fallback) + (totals.gpu_sram_seen ? totals.gpu_sram : 0.0);
+			const double ane = totals.ane_primary_seen ? totals.ane_primary : totals.ane_fallback;
+			const double dram = totals.dram_primary_seen ? totals.dram_primary : totals.dram_fallback;
+
+			::Power::current_power.components_available = totals.cpu_primary_seen or totals.cpu_fallback_seen
+				or totals.gpu_primary_seen or totals.gpu_fallback_seen or totals.ane_primary_seen or totals.ane_fallback_seen
+				or totals.dram_primary_seen or totals.dram_fallback_seen or totals.display_seen or totals.media_seen or totals.other_seen;
+			if (totals.cpu_primary_seen or totals.cpu_fallback_seen) update_power(::Power::current_power.cpu_watts, cpu, seconds);
+			if (totals.gpu_primary_seen or totals.gpu_fallback_seen or totals.gpu_sram_seen) update_power(::Power::current_power.gpu_watts, gpu, seconds);
+			if (totals.ane_primary_seen or totals.ane_fallback_seen) update_power(::Power::current_power.ane_watts, ane, seconds);
+			if (totals.dram_primary_seen or totals.dram_fallback_seen) update_power(::Power::current_power.dram_watts, dram, seconds);
+			if (totals.display_seen) update_power(::Power::current_power.display_watts, totals.display, seconds);
+			if (totals.media_seen) update_power(::Power::current_power.media_watts, totals.media, seconds);
+			if (totals.other_seen) update_power(::Power::current_power.other_watts, totals.other, seconds);
+
+			if (::Power::current_power.components_available) {
+				double total = 0.0;
+				bool any = false;
+				for (const float watts : {::Power::current_power.cpu_watts, ::Power::current_power.gpu_watts, ::Power::current_power.ane_watts,
+					::Power::current_power.dram_watts, ::Power::current_power.display_watts, ::Power::current_power.media_watts, ::Power::current_power.other_watts}) {
+					if (watts >= 0.0f) {
+						total += watts;
+						any = true;
+					}
+				}
+				if (any) ::Power::current_power.component_total_watts = static_cast<float>(total);
+				if (any and (not ::Power::current_power.total_available or ::Power::current_power.total_is_estimate)) {
+					::Power::current_power.total_watts = ::Power::current_power.component_total_watts;
+					::Power::current_power.total_available = true;
+					::Power::current_power.total_is_estimate = true;
+				}
+			}
+		}
+
 		bool init() {
 			if (initialized) return false;
 
@@ -373,9 +568,14 @@ namespace Gpu {
 				//? Create IOReport subscription
 				CFMutableDictionaryRef sub_dict = nullptr;
 				ior_sub = IOReportCreateSubscription(nullptr, ior_chan, &sub_dict, 0, nullptr);
-				if (sub_dict) CFRelease(sub_dict);
+				// IOReport may return a reduced/normalized channel descriptor. It
+				// must be retained for subsequent samples; sampling the requested
+				// descriptor can silently produce incomplete deltas.
+				ior_sub_chan = sub_dict;
 				if (not ior_sub) {
 					Logger::warning("Apple Silicon GPU: IOReport subscription unavailable; using IOAccelerator statistics");
+					if (ior_sub_chan) CFRelease(ior_sub_chan);
+					ior_sub_chan = nullptr;
 					if (ior_chan) CFRelease(ior_chan);
 					ior_chan = nullptr;
 				}
@@ -396,7 +596,7 @@ namespace Gpu {
 
 			//? Take initial sample for delta computation when IOReport is available.
 			if (ior_sub) {
-				prev_sample = IOReportCreateSamples(ior_sub, ior_chan, nullptr);
+				prev_sample = IOReportCreateSamples(ior_sub, ior_sub_chan ? ior_sub_chan : ior_chan, nullptr);
 				prev_sample_time = get_mach_time_ms();
 			}
 
@@ -409,6 +609,7 @@ namespace Gpu {
 		bool shutdown() {
 			if (not initialized) return false;
 			if (prev_sample) { CFRelease(prev_sample); prev_sample = nullptr; }
+			if (ior_sub_chan) { CFRelease(ior_sub_chan); ior_sub_chan = nullptr; }
 			if (ior_chan) { CFRelease(ior_chan); ior_chan = nullptr; }
 			if (ior_sub) { CFRelease((CFTypeRef)ior_sub); ior_sub = nullptr; }
 			initialized = false;
@@ -536,7 +737,7 @@ namespace Gpu {
 			}
 
 			//? Take new IOReport sample and compute delta
-			CFDictionaryRef cur_sample = IOReportCreateSamples(ior_sub, ior_chan, nullptr);
+			CFDictionaryRef cur_sample = IOReportCreateSamples(ior_sub, ior_sub_chan ? ior_sub_chan : ior_chan, nullptr);
 			if (not cur_sample) return false;
 
 			uint64_t cur_time = get_mach_time_ms();
@@ -561,6 +762,7 @@ namespace Gpu {
 			bool got_gpu_util = false;
 			double gpu_power_watts = 0;
 			bool got_gpu_power = false;
+			energy_totals energy{};
 
 			long chan_count = CFArrayGetCount(channels);
 			for (long i = 0; i < chan_count; i++) {
@@ -570,6 +772,7 @@ namespace Gpu {
 				string group = cfstring_to_string(IOReportChannelGetGroup(item));
 				string subgroup = cfstring_to_string(IOReportChannelGetSubGroup(item));
 				string channel = cfstring_to_string(IOReportChannelGetChannelName(item));
+				collect_energy(item, energy);
 
 				//? GPU utilization from residency states
 				if (group == "GPU Stats" and subgroup == "GPU Performance States") {
@@ -610,23 +813,12 @@ namespace Gpu {
 					}
 				}
 
-				//? GPU power from Energy Model
-				if (group == "Energy Model" and channel == "GPU Energy") {
-					string unit = cfstring_to_string(IOReportChannelGetUnitLabel(item));
-					int64_t val = IOReportSimpleGetIntegerValue(item, 0);
-					double energy = static_cast<double>(val);
-					double divisor = static_cast<double>(dt) / 1000.0; // dt is in ms
+			}
 
-					if (unit.find("nJ") != string::npos) energy /= 1e9;
-					else if (unit.find("uJ") != string::npos or unit.find("\xc2\xb5J") != string::npos) energy /= 1e6;
-					else if (unit.find("mJ") != string::npos) energy /= 1e3;
-					//? energy is now in Joules
-
-					if (divisor > 0) {
-						gpu_power_watts = energy / divisor;
-						got_gpu_power = true;
-					}
-				}
+			publish_energy(energy, dt);
+			if (::Power::current_power.gpu_watts >= 0.0f) {
+				gpu_power_watts = ::Power::current_power.gpu_watts;
+				got_gpu_power = true;
 			}
 
 			//? Prefer the driver's live utilization value when available. It is
@@ -1066,6 +1258,7 @@ namespace Cpu {
 
 		uint32_t percent = -1;
 		long seconds = -1;
+		float watts = -1.0f;
 		string status = "discharging";
 		IOPSInfo_Wrap ps_info{};
 		if (ps_info()) {
@@ -1101,7 +1294,19 @@ namespace Cpu {
 				has_battery = false;
 			}
 		}
-		return {percent, -1, seconds, status};
+
+		// PSTR is a board-level draw, so it is the useful battery drain
+		// number while unplugged. It is deliberately not shown as battery
+		// power while charging because that would include adapter input.
+		if (status == "discharging" and Power::current_power.total_available) {
+			watts = Power::current_power.total_watts;
+			// Prefer the raw-capacity/voltage estimate when available. It is
+			// derived from the same live draw shown in the power row and avoids
+			// stale or missing IOPS time estimates.
+			if (const auto estimated = Power::estimate_battery_seconds(watts); estimated.has_value())
+				seconds = estimated.value();
+		}
+		return {percent, watts, seconds, status};
 	}
 
 	auto collect(bool no_update) -> cpu_info & {
@@ -1196,6 +1401,11 @@ namespace Cpu {
 
 		if (Config::getB("check_temp") and got_sensors)
 			update_sensors();
+
+		Power::refresh();
+		supports_watts = Power::current_power.cpu_watts >= 0.0f;
+		if (supports_watts)
+			cpu.usage_watts = Power::current_power.cpu_watts;
 
 		if (Config::getB("show_battery") and has_battery)
 			current_bat = get_battery();

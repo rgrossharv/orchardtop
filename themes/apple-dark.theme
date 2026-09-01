@@ -27,6 +27,15 @@ theme[inactive_fg]="#5f6b80"
 # Color of text appearing on top of graphs
 theme[graph_text]="#80c8ff"
 
+# Meter background and process state colors
+theme[meter_bg]="#283346"
+theme[proc_pause_bg]="#8f6b2a"
+theme[proc_follow_bg]="#405f8f"
+theme[proc_banner_bg]="#4d3868"
+theme[proc_banner_fg]="#f4f7ff"
+theme[followed_bg]="#405f8f"
+theme[followed_fg]="#f4f7ff"
+
 # Misc colors for processes box including mini cpu graphs
 theme[proc_misc]="#b79cff"
 

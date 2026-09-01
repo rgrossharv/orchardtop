@@ -366,6 +366,9 @@ install:
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin
 	@cp -p $(TARGETDIR)/orchardtop $(DESTDIR)$(PREFIX)/bin/orchardtop
 	@chmod 755 $(DESTDIR)$(PREFIX)/bin/orchardtop
+	@$(call green,Installing compatibility command to: $(WHITE)$(DESTDIR)$(PREFIX)/bin/otop)
+	@cp -p otop $(DESTDIR)$(PREFIX)/bin/otop
+	@chmod 755 $(DESTDIR)$(PREFIX)/bin/otop
 	@$(call green,Installing doc to: $(WHITE)$(DESTDIR)$(PREFIX)/share/doc/orchardtop)
 	@mkdir -p $(DESTDIR)$(PREFIX)/share/doc/orchardtop
 	@cp -p README.md APPLE_SILICON.md LICENSE NOTICE $(DESTDIR)$(PREFIX)/share/doc/orchardtop
@@ -404,6 +407,8 @@ setcap:
 uninstall:
 	@$(call red,Removing: ,$(WHITE)$(DESTDIR)$(PREFIX)/bin/orchardtop)
 	@rm -rfv $(DESTDIR)$(PREFIX)/bin/orchardtop
+	@$(call red,Removing: ,$(WHITE)$(DESTDIR)$(PREFIX)/bin/otop)
+	@rm -rfv $(DESTDIR)$(PREFIX)/bin/otop
 	@$(call red,Removing: ,$(WHITE)$(DESTDIR)$(PREFIX)/share/orchardtop)
 	@rm -rfv $(DESTDIR)$(PREFIX)/share/orchardtop
 	@$(call red,Removing: ,$(WHITE)$(DESTDIR)$(PREFIX)/share/applications/orchardtop.desktop)

@@ -92,6 +92,33 @@ OrchardTop saves settings here:
 
 It includes an `apple-dark` color theme. Pick it in the menu.
 
+On Apple Silicon, `apple-dark` is the default launch theme. Existing configs
+that still use the untouched `Default` theme are migrated to it; a different
+theme chosen in the menu is respected.
+
+## Power and battery estimates
+
+On Apple Silicon, OrchardTop uses macOS IOReport energy counters to show live
+CPU, GPU, ANE, DRAM, display, media, and residual system power. `SUM` is the
+subtotal of the counters macOS exposed, while `TOTAL` is the live board-level
+reading from AppleSMC. The two can differ because macOS does not expose every
+part of the board as a named counter.
+
+When the normal macOS battery estimate is unavailable, OrchardTop estimates
+remaining time from the battery's measured capacity and voltage divided by
+the board-level draw. It is an estimate, not a guarantee: workload, display
+brightness, and battery condition can change it quickly.
+
+After building, the monitor can be started either way:
+
+```bash
+./bin/orchardtop
+./otop
+```
+
+`make install` also installs `otop` alongside `orchardtop` as a compatibility
+command.
+
 ## License and credit
 
 OrchardTop uses the Apache License 2.0 because btop uses that license. The full

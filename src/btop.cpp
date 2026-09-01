@@ -328,6 +328,13 @@ void init_config(bool low_color, std::optional<std::string>& filter) {
 	atomic_lock lck(Global::init_conf);
 	vector<string> load_warnings;
 	Config::load(Config::conf_file, load_warnings);
+	#if defined(__APPLE__) && defined(__arm64__)
+		// OrchardTop's Apple layout is designed around the apple-dark palette.
+		// Migrate an old untouched btop/OrchardTop default without overriding a
+		// user's deliberate theme choice.
+		if (Config::getS("color_theme") == "Default")
+			Config::set("color_theme", "apple-dark");
+	#endif
 	Config::set("lowcolor", (low_color ? true : not Config::getB("truecolor")));
 
 	static bool first_init = true;
@@ -914,6 +921,13 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 #endif
 	if (std::error_code ec; not Global::self_path.empty()) {
 		Theme::theme_dir = fs::canonical(Global::self_path / "../share/orchardtop/themes", ec);
+		if (ec or not fs::is_directory(Theme::theme_dir) or access(Theme::theme_dir.c_str(), R_OK) == -1) Theme::theme_dir.clear();
+	}
+	//? Also support running directly from an OrchardTop checkout, where the
+	// themes live in the repository's themes/ directory next to bin/.
+	if (Theme::theme_dir.empty() and not Global::self_path.empty()) {
+		std::error_code ec;
+		Theme::theme_dir = fs::canonical(Global::self_path / "../themes", ec);
 		if (ec or not fs::is_directory(Theme::theme_dir) or access(Theme::theme_dir.c_str(), R_OK) == -1) Theme::theme_dir.clear();
 	}
 	//? If relative path failed, check two most common absolute paths
