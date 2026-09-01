@@ -90,13 +90,13 @@ using namespace std::literals;
 namespace Global {
 	const vector<array<string, 2>> Banner_src = {
 		{"#8AD49D", "╭──────────────────────────╮"},
-		{"#71C7A1", "│          ▄▄              │"},
-		{"#57B8A5", "│       ▄████▄             │"},
-		{"#3DA9A9", "│      ████████            │"},
-		{"#3099B6", "│       ▀████▀             │"},
+		{"#71C7A1", "│            ▄▄            │"},
+		{"#57B8A5", "│         ▄████▄           │"},
+		{"#3DA9A9", "│        ████████          │"},
+		{"#3099B6", "│         ▀████▀           │"},
 		{"#2688C2", "╰────── ORCHARDTOP ────────╯"},
 	};
-	const string Version = "1.4.7-orchard.1";
+	const string Version = "1.4.8";
 
 	int coreCount;
 	string overlay;
