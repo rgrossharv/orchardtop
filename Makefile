@@ -233,7 +233,18 @@ OBJEXT		:= o
 override GOODFLAGS := $(foreach flag,$(TESTFLAGS),$(strip $(shell echo "int main() {}" | $(CXX) -o /dev/null $(flag) -x c++ - >/dev/null 2>&1 && echo $(flag) || true)))
 
 #? Flags, Libraries and Includes
-override REQFLAGS   := -std=c++23
+# Apple Clang on older macOS runners calls the C++23 draft mode c++2b. Probe
+# both spellings so a normal `make` works with old and new Apple toolchains.
+override CXX_STD_FLAG := $(shell \
+	if printf 'int main() {}\n' | $(CXX) -std=c++23 -x c++ - -c -o /dev/null >/dev/null 2>&1; then \
+		echo -std=c++23; \
+	elif printf 'int main() {}\n' | $(CXX) -std=c++2b -x c++ - -c -o /dev/null >/dev/null 2>&1; then \
+		echo -std=c++2b; \
+	fi)
+ifeq ($(strip $(CXX_STD_FLAG)),)
+$(error $(call red_i,ERROR: $(CXX) must support C++23 (try a newer Apple Clang or GCC 15)))
+endif
+override REQFLAGS   := $(CXX_STD_FLAG)
 WARNFLAGS			:= -Wall -Wextra -pedantic
 OPTFLAGS			:= -O2 $(LTO)
 LDCXXFLAGS			:= -pthread -DFMT_HEADER_ONLY -D_GLIBCXX_ASSERTIONS -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG -D_FILE_OFFSET_BITS=64 $(GOODFLAGS) $(ADDFLAGS)

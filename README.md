@@ -154,6 +154,21 @@ Homebrew; an older Homebrew executable may still be first on PATH. The script
 does not update the separate Homebrew tap. Set `ORCHARDTOP_INSTALL_DIR` to choose
 another writable installation prefix.
 
+To publish a repaired release and update the Homebrew formula in one operation,
+use `scripts/release-brew.sh`. It builds with Homebrew GCC 15, waits for the
+GitHub release, updates `rgrossharv/homebrew-orchardtop`, and runs `brew upgrade
+orchardtop` followed by the formula test:
+
+```bash
+./scripts/release-brew.sh --dry-run
+./scripts/release-brew.sh
+```
+
+The source version must be new because the failed `v1.4.9` tag is already
+present and is never overwritten. Homebrew upgrades the formula's git revision
+and uses GCC 15, which avoids the older Apple Clang `-std=c++23` compatibility
+problem.
+
 After building, the monitor can be started either way:
 
 ```bash
