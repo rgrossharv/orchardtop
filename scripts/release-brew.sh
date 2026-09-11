@@ -47,7 +47,11 @@ esac
 command -v gh >/dev/null || { echo "Install GitHub CLI first: brew install gh" >&2; exit 1; }
 command -v brew >/dev/null || { echo "Homebrew is required for the formula upgrade." >&2; exit 1; }
 
-if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+remote_tag="$(git ls-remote --tags origin "refs/tags/$tag")" || {
+    echo "Could not query origin for $tag; check network/authentication and retry." >&2
+    exit 1
+}
+if [[ -n "$remote_tag" ]]; then
     echo "$tag already exists on GitHub. Choose a new version; the failed v1.4.9 tag is intentionally not overwritten." >&2
     exit 1
 fi
