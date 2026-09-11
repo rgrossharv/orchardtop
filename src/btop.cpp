@@ -96,7 +96,7 @@ namespace Global {
 		{"#3099B6", "│         ▀████▀           │"},
 		{"#2688C2", "╰────── ORCHARDTOP ────────╯"},
 	};
-	const string Version = "1.4.10";
+	const string Version = "1.4.11";
 
 	int coreCount;
 	string overlay;

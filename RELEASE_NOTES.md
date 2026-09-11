@@ -1,9 +1,10 @@
-# OrchardTop v1.4.10
+# OrchardTop v1.4.11
 
 - Repair the release compiler setup with GCC 15 and support the older Apple
   Clang C++23 flag spelling in ordinary builds.
 - Provide a resumable release script that publishes the release, verifies its
   checksum, updates the Homebrew tap, and upgrades and tests the installed app.
+- Make the terminal smoke test finish reliably on CI pseudo-terminals.
 
 - Show battery flow first: `BAT OUT` is power supplied by the battery, `BAT IN`
   is power entering it, and `BAT IDLE` is measured zero current.

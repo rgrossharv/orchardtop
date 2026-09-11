@@ -132,7 +132,7 @@ To check the raw values with the same parser used by the monitor:
 ./scripts/test-power.sh
 ```
 
-## Publish and upgrade v1.4.10
+## Publish and upgrade v1.4.11
 
 The release is prepared locally. From a regular Terminal, run:
 
@@ -142,7 +142,7 @@ cd /path/to/orchardtop
 ./scripts/release-brew.sh
 ```
 
-The version and release notes are already prepared. The script authenticates
+The version and release notes are prepared for v1.4.11. The script authenticates
 through GitHub CLI if necessary, tests and builds with GCC 15, publishes the
 tag, waits for GitHub Actions, and checks the downloaded release checksum. It
 then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the
