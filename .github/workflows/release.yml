@@ -23,14 +23,17 @@ jobs:
       - name: Test power decoding
         run: ./scripts/test-power.sh
 
+      - name: Test Homebrew formula updates
+        run: ruby tests/update_homebrew_test.rb
+
       - name: Install release build tools
         run: |
           export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
           brew update --quiet
-          brew install --force --overwrite gcc@15 lowdown
+          brew install gcc@15 lowdown
 
       - name: Build OrchardTop
-        run: make QUIET=true CXX="$(brew --prefix gcc@15)/bin/g++-15"
+        run: make QUIET=true CXX="$(brew --prefix gcc@15)/bin/g++-15" LDFLAGS='-static-libgcc -static-libstdc++'
 
       - name: Test terminal startup and theme
         run: python3 tests/theme_smoke.py
@@ -41,6 +44,11 @@ jobs:
           make QUIET=true CXX="$(brew --prefix gcc@15)/bin/g++-15" DESTDIR="$stage" PREFIX=/usr/local install
           test -f "$stage/usr/local/share/orchardtop/themes/apple-dark.theme"
           "$stage/usr/local/bin/otop" --version
+          # The standalone download must not depend on the runner's Homebrew GCC.
+          if otool -L "$stage/usr/local/bin/orchardtop" | tail -n +2 | grep -E '/opt/homebrew/|/usr/local/'; then
+            echo 'Release binary contains a Homebrew runtime dependency.' >&2
+            exit 1
+          fi
           tar -C "$stage/usr/local" -czf orchardtop-macos-arm64.tar.gz .
           shasum -a 256 orchardtop-macos-arm64.tar.gz > checksums.txt
 

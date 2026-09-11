@@ -132,42 +132,37 @@ To check the raw values with the same parser used by the monitor:
 ./scripts/test-power.sh
 ```
 
-## Publish and upgrade v1.4.9
+## Publish and upgrade v1.4.10
 
 The release is prepared locally. From a regular Terminal, run:
 
 ```bash
 cd /path/to/orchardtop
-./scripts/release.sh --dry-run
-./scripts/release.sh
-```
-
-The script requires a clean commit on `main`, authenticates through `gh` in your
-browser if needed, checks remote history, creates the version tag, pushes without
-force, waits for the release workflow, downloads that exact version, verifies its
-checksum, and installs it into `~/.local`. It never asks you to give Codex a password.
-A rerun reuses the matching tag and release workflow. If the workflow failed,
-fix/re-run it in GitHub Actions before retrying the script.
-
-Run `~/.local/bin/orchardtop` after upgrading. This installs independently of
-Homebrew; an older Homebrew executable may still be first on PATH. The script
-does not update the separate Homebrew tap. Set `ORCHARDTOP_INSTALL_DIR` to choose
-another writable installation prefix.
-
-To publish a repaired release and update the Homebrew formula in one operation,
-use `scripts/release-brew.sh`. It builds with Homebrew GCC 15, waits for the
-GitHub release, updates `rgrossharv/homebrew-orchardtop`, and runs `brew upgrade
-orchardtop` followed by the formula test:
-
-```bash
 ./scripts/release-brew.sh --dry-run
 ./scripts/release-brew.sh
 ```
 
-The source version must be new because the failed `v1.4.9` tag is already
-present and is never overwritten. Homebrew upgrades the formula's git revision
-and uses GCC 15, which avoids the older Apple Clang `-std=c++23` compatibility
-problem.
+The version and release notes are already prepared. The script authenticates
+through GitHub CLI if necessary, tests and builds with GCC 15, publishes the
+tag, waits for GitHub Actions, and checks the downloaded release checksum. It
+then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the
+Homebrew upgrade, and verifies the formula test, executable version, and theme.
+
+It requires a clean commit on `main`. A rerun reuses a matching tag and tap
+update. It refuses to overwrite a different commit's tag or downgrade the tap.
+The failed `v1.4.9` tag is preserved. If the build itself fails, inspect GitHub
+Actions before retrying; changes to source require a new version/tag.
+
+Once the script has published the formula, other installations can upgrade with:
+
+```bash
+brew update
+brew upgrade rgrossharv/orchardtop/orchardtop
+```
+
+The script prints the exact Homebrew executable path. Use that path if an older
+`~/.local/bin/orchardtop` copy takes precedence in your shell. The older
+`scripts/release.sh` installs a standalone copy and does not update Homebrew.
 
 After building, the monitor can be started either way:
 
