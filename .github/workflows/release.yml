@@ -20,13 +20,21 @@ jobs:
       - name: Check runner architecture
         run: test "$(uname -m)" = "arm64"
 
+      - name: Test power decoding
+        run: ./scripts/test-power.sh
+
       - name: Build OrchardTop
         run: make QUIET=true
+
+      - name: Test terminal startup and theme
+        run: python3 tests/theme_smoke.py
 
       - name: Package OrchardTop
         run: |
           stage="$(mktemp -d)"
           make QUIET=true DESTDIR="$stage" PREFIX=/usr/local install
+          test -f "$stage/usr/local/share/orchardtop/themes/apple-dark.theme"
+          "$stage/usr/local/bin/otop" --version
           tar -C "$stage/usr/local" -czf orchardtop-macos-arm64.tar.gz .
           shasum -a 256 orchardtop-macos-arm64.tar.gz > checksums.txt
 
@@ -38,4 +46,4 @@ jobs:
             orchardtop-macos-arm64.tar.gz \
             checksums.txt \
             --verify-tag \
-            --generate-notes
+            --notes-file RELEASE_NOTES.md

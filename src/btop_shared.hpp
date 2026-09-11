@@ -121,11 +121,12 @@ namespace Power {
 		float display_watts = -1.0f;
 		float media_watts = -1.0f;
 		float other_watts = -1.0f;
+		float battery_watts = 0.0f; // Positive discharge, negative charge; use availability flag.
 		float component_total_watts = -1.0f;
 		float total_watts = -1.0f;
 		bool components_available = false;
+		bool battery_power_available = false;
 		bool total_available = false;
-		bool total_is_estimate = false;
 	};
 
 	extern power_info current_power;

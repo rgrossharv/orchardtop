@@ -90,7 +90,8 @@ OrchardTop saves settings here:
 ~/.config/orchardtop/orchardtop.conf
 ```
 
-It includes an `apple-dark` color theme. Pick it in the menu.
+The `apple-dark` palette is built into the executable and is also shipped as a
+theme file. It works on first launch even if the theme files are missing.
 
 On Apple Silicon, `apple-dark` is the default launch theme. Existing configs
 that still use the untouched `Default` theme are migrated to it; a different
@@ -98,16 +99,60 @@ theme chosen in the menu is respected.
 
 ## Power and battery estimates
 
-On Apple Silicon, OrchardTop uses macOS IOReport energy counters to show live
-CPU, GPU, ANE, DRAM, display, media, and residual system power. `SUM` is the
-subtotal of the counters macOS exposed, while `TOTAL` is the live board-level
-reading from AppleSMC. The two can differ because macOS does not expose every
-part of the board as a named counter.
+The power row puts battery flow first:
 
-When the normal macOS battery estimate is unavailable, OrchardTop estimates
-remaining time from the battery's measured capacity and voltage divided by
-the board-level draw. It is an estimate, not a guarantee: workload, display
-brightness, and battery condition can change it quickly.
+- `BAT OUT 12.0W`: the battery is supplying 12 watts to the computer.
+- `BAT IN 24.0W`: 24 watts are entering the battery while charging.
+- `BAT IDLE 0.0W`: the sensor reports no net battery flow.
+- `BAT N/A`: the battery measurement is unavailable.
+- `SMC`: the separate PSTR sensor reading, when available. Its coverage depends
+  on the Mac; it is not substituted for battery power.
+- `SUM`: the subtotal of exposed IOReport energy channels, not whole-system power.
+
+Battery watts come from signed `InstantAmperage` (mA) multiplied by `Voltage`
+(mV) from one AppleSmartBattery snapshot, divided by 1,000,000. If the instant
+sample is unavailable or invalid, the driver's averaged `Amperage` is used.
+OrchardTop adds no smoothing. The battery controller still controls update cadence
+and measurement accuracy; polling faster does not produce a newer hardware sample.
+
+On battery, `BAT OUT` answers how much electrical power the computer is pulling
+from the battery, including the loads fed by it. On AC, `BAT IN` is charging
+power, not the computer's consumption. Charger nameplate watts are capacity,
+not measured draw. Exact wall-plug consumption requires an external meter.
+
+The battery header shows the same flow magnitude, with ▲ charging or ▼ discharging.
+The macOS time-to-empty estimate is preserved when available; otherwise a battery
+capacity/voltage/draw estimate is used. That ETA changes with workload and battery
+condition. Missing measurements are never replaced with a component subtotal.
+
+To check the raw values with the same parser used by the monitor:
+
+```bash
+./scripts/check-power.sh
+./scripts/test-power.sh
+```
+
+## Publish and upgrade v1.4.9
+
+The release is prepared locally. From a regular Terminal, run:
+
+```bash
+cd /path/to/orchardtop
+./scripts/release.sh --dry-run
+./scripts/release.sh
+```
+
+The script requires a clean commit on `main`, authenticates through `gh` in your
+browser if needed, checks remote history, creates the version tag, pushes without
+force, waits for the release workflow, downloads that exact version, verifies its
+checksum, and installs it into `~/.local`. It never asks you to give Codex a password.
+A rerun reuses the matching tag and release workflow. If the workflow failed,
+fix/re-run it in GitHub Actions before retrying the script.
+
+Run `~/.local/bin/orchardtop` after upgrading. This installs independently of
+Homebrew; an older Homebrew executable may still be first on PATH. The script
+does not update the separate Homebrew tap. Set `ORCHARDTOP_INSTALL_DIR` to choose
+another writable installation prefix.
 
 After building, the monitor can be started either way:
 

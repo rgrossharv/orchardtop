@@ -6,7 +6,15 @@ set -eu
 
 repo="rgrossharv/orchardtop"
 asset="orchardtop-macos-arm64.tar.gz"
-base_url="https://github.com/${repo}/releases/latest/download"
+if [ -n "${ORCHARDTOP_VERSION:-}" ]; then
+    case "$ORCHARDTOP_VERSION" in
+        v[0-9]*.[0-9]*.[0-9]*) ;;
+        *) echo "Expected a version tag such as v1.4.9." >&2; exit 1 ;;
+    esac
+    base_url="https://github.com/${repo}/releases/download/${ORCHARDTOP_VERSION}"
+else
+    base_url="https://github.com/${repo}/releases/latest/download"
+fi
 
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "OrchardTop currently needs macOS." >&2

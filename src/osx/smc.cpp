@@ -17,6 +17,7 @@ tab-size = 4
 */
 
 #include "smc.hpp"
+#include "smc_power.hpp"
 
 static constexpr size_t MaxIndexCount = sizeof("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ") - 1;
 static constexpr const char *KeyIndexes = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -110,11 +111,8 @@ namespace Cpu {
 	double SMCConnection::getPowerWatts() {
 		char key[] = "PSTR";
 		SMCVal_t val{};
-		if (SMCReadKey(key, &val) != kIOReturnSuccess or strcmp(val.dataType, DATATYPE_SP78) != 0 or val.dataSize < 2)
-			return -1.0;
-
-		const auto raw = static_cast<uint16_t>((static_cast<uint8_t>(val.bytes[0]) << 8) | static_cast<uint8_t>(val.bytes[1]));
-		return static_cast<double>(static_cast<int16_t>(raw)) / 256.0;
+		if (SMCReadKey(key, &val) != kIOReturnSuccess) return -1.0;
+		return Power::decode_smc_power(val.dataType, reinterpret_cast<const unsigned char*>(val.bytes), val.dataSize);
 	}
 
 	kern_return_t SMCConnection::SMCReadKey(UInt32Char_t key, SMCVal_t *val) {

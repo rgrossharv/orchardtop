@@ -100,6 +100,58 @@ namespace Theme {
 		{ "followed_fg", "#ee"},
 	};
 
+	// Built-in fallback; keep in sync with themes/apple-dark.theme.
+	const std::unordered_map<string, string> Apple_dark_theme = {
+		{ "main_bg", "#10131a" },
+		{ "main_fg", "#e8edf7" },
+		{ "title", "#f4f7ff" },
+		{ "hi_fg", "#80c8ff" },
+		{ "selected_bg", "#26344d" },
+		{ "selected_fg", "#ffffff" },
+		{ "inactive_fg", "#5f6b80" },
+		{ "graph_text", "#80c8ff" },
+		{ "meter_bg", "#283346" },
+		{ "proc_pause_bg", "#8f6b2a" },
+		{ "proc_follow_bg", "#405f8f" },
+		{ "proc_banner_bg", "#4d3868" },
+		{ "proc_banner_fg", "#f4f7ff" },
+		{ "followed_bg", "#405f8f" },
+		{ "followed_fg", "#f4f7ff" },
+		{ "proc_misc", "#b79cff" },
+		{ "cpu_box", "#5d9cff" },
+		{ "mem_box", "#6fc9b0" },
+		{ "net_box", "#80c8ff" },
+		{ "proc_box", "#b79cff" },
+		{ "div_line", "#344158" },
+		{ "temp_start", "#6fc9b0" },
+		{ "temp_mid", "#ffd166" },
+		{ "temp_end", "#ff6b8a" },
+		{ "cpu_start", "#6fc9b0" },
+		{ "cpu_mid", "#80c8ff" },
+		{ "cpu_end", "#b79cff" },
+		{ "free_start", "#6fc9b0" },
+		{ "free_mid", "#80c8ff" },
+		{ "free_end", "#ff6b8a" },
+		{ "cached_start", "#6fc9b0" },
+		{ "cached_mid", "#80c8ff" },
+		{ "cached_end", "#b79cff" },
+		{ "available_start", "#6fc9b0" },
+		{ "available_mid", "#80c8ff" },
+		{ "available_end", "#b79cff" },
+		{ "used_start", "#6fc9b0" },
+		{ "used_mid", "#ffd166" },
+		{ "used_end", "#ff6b8a" },
+		{ "download_start", "#6fc9b0" },
+		{ "download_mid", "#80c8ff" },
+		{ "download_end", "#b79cff" },
+		{ "upload_start", "#b79cff" },
+		{ "upload_mid", "#80c8ff" },
+		{ "upload_end", "#6fc9b0" },
+		{ "process_start", "#80c8ff" },
+		{ "process_mid", "#b79cff" },
+		{ "process_end", "#ff6b8a" },
+	};
+
 	const std::unordered_map<string, string> TTY_theme = {
 		{ "main_bg", "\x1b[0;40m" },
 		{ "main_fg", "\x1b[37m" },
@@ -430,6 +482,7 @@ namespace Theme {
 		themes.clear();
 		themes.push_back("Default");
 		themes.push_back("TTY");
+		themes.push_back("apple-dark");
 
 		//? Priority: custom_theme_dir -> user_theme_dir -> theme_dir
 		for (const auto& path : { custom_theme_dir, user_theme_dir, theme_dir } ) {
@@ -442,7 +495,7 @@ namespace Theme {
 		}
 
 		//? Sort themes alphabetically
-		std::stable_sort(themes.begin() + 2, themes.end(), [](const string& a, const string& b) {
+		std::stable_sort(themes.begin() + 3, themes.end(), [](const string& a, const string& b) {
 			return fs::path(a).filename().string() < fs::path(b).filename().string();
 		});
 
@@ -453,6 +506,7 @@ namespace Theme {
 		const auto theme_cfg_path = fs::path(theme);
 		fs::path theme_path;
 		for (const fs::path p : themes) {
+			if (p == "apple-dark") continue; // Prefer an installed/custom palette if present.
 			//? Check for match by full path, filename, stem or legacy absolute path
 			if (p == theme or p.filename() == theme or p.stem() == theme or (theme_cfg_path.is_absolute() and theme_cfg_path.filename() == p.filename())) {
 				theme_path = p;
@@ -462,7 +516,8 @@ namespace Theme {
 		if (theme == "TTY" or Config::getB("tty_mode"))
 			generateTTYColors();
 		else {
-			generateColors((theme == "Default" or theme_path.empty() ? Default_theme : loadFile(theme_path)));
+			generateColors(theme_path.empty() and theme_cfg_path.stem() == "apple-dark" ? Apple_dark_theme
+				: (theme == "Default" or theme_path.empty() ? Default_theme : loadFile(theme_path)));
 			generateGradients();
 		}
 		Term::fg = colors.at("main_fg");

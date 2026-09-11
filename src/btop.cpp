@@ -96,7 +96,7 @@ namespace Global {
 		{"#3099B6", "│         ▀████▀           │"},
 		{"#2688C2", "╰────── ORCHARDTOP ────────╯"},
 	};
-	const string Version = "1.4.8";
+	const string Version = "1.4.9";
 
 	int coreCount;
 	string overlay;
@@ -333,7 +333,7 @@ void init_config(bool low_color, std::optional<std::string>& filter) {
 		// Migrate an old untouched btop/OrchardTop default without overriding a
 		// user's deliberate theme choice.
 		if (Config::getS("color_theme") == "Default")
-			Config::set("color_theme", "apple-dark");
+			Config::set("color_theme", "apple-dark"s);
 	#endif
 	Config::set("lowcolor", (low_color ? true : not Config::getB("truecolor")));
 

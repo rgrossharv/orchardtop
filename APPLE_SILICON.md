@@ -43,7 +43,23 @@ Apple does not publish one fixed GPU power limit for this tool to use. The
 power bar compares the current reading with the largest reading seen since
 OrchardTop started. The watts number is still the live reading.
 
-The Apple power line labels the exposed component subtotal as `SUM` and the
-AppleSMC board reading as `TOTAL`. On battery, OrchardTop uses `TOTAL` for the
-live drain value and can derive a remaining-time estimate from the raw battery
-capacity and voltage when macOS does not provide an ETA.
+The power row starts with `BAT OUT`, `BAT IN`, or `BAT IDLE`, computed from
+AppleSmartBattery current and voltage. This is net battery flow, including all
+loads powered by the battery during discharge. Charging power alone cannot tell
+you the computer's total consumption while plugged in.
+
+`SMC` labels PSTR separately because its coverage varies with hardware. `SUM`
+is only the exposed IOReport channel subtotal; channels can overlap or omit
+loads, so it must not be treated as battery or whole-system draw. Unavailable
+sources show `N/A` or `-`, never a previous successful reading.
+
+Battery readings have no additional smoothing. They prefer InstantAmperage over
+Amperage, preserve the sign, and convert mA × mV to W. The sensor's own cadence,
+precision, and averaging still apply; these are not calibrated meter readings.
+The discharge ETA uses battery-side power only when macOS has no usable ETA.
+
+Implementation references:
+- [Apple power-source implementation](https://github.com/apple-oss-distributions/PowerManagement/blob/main/AppleSmartBatteryManager/AppleSmartBattery.cpp)
+- [Chromium SMC power decoding](https://chromium.googlesource.com/chromium/src.git/+/72.0.3626.80/chrome/browser/metrics/power_metrics_provider_mac.mm)
+
+Validation commands: `./scripts/test-power.sh` and `./scripts/check-power.sh`.

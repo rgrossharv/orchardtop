@@ -570,24 +570,16 @@ namespace Cpu {
 		const auto watts = [](const float value) -> string {
 			return value >= 0.0f ? fmt::format("{:.1f}", value) : "-"s;
 		};
-		const auto compact_watts = [&watts](const float value) {
-			auto result = watts(value);
-			if (result.starts_with("0.")) result.erase(0, 1);
-			return result;
-		};
-		const bool total_is_estimate = power.total_is_estimate;
-
-		string summary;
-		if (available_width >= 86) {
-			summary = fmt::format("PWR CPU {}W GPU {}W ANE {}W RAM {}W DISP {}W MED {}W OTHER {}W SUM {}W {} {}W",
-				watts(power.cpu_watts), watts(power.gpu_watts), watts(power.ane_watts), watts(power.dram_watts),
-				watts(power.display_watts), watts(power.media_watts), watts(power.other_watts),
-				watts(power.component_total_watts), total_is_estimate ? "EST" : "TOTAL", watts(power.total_watts));
-		} else {
-			summary = fmt::format("P C{} G{} A{} R{} D{} M{} O{} {}{}W",
-				compact_watts(power.cpu_watts), compact_watts(power.gpu_watts), compact_watts(power.ane_watts), compact_watts(power.dram_watts),
-				compact_watts(power.display_watts), compact_watts(power.media_watts), compact_watts(power.other_watts),
-				total_is_estimate ? "E" : "T", watts(power.total_watts));
+		// Put battery flow first so narrow layouts cannot truncate it away.
+		string summary = power.battery_power_available
+			? fmt::format("BAT {} {}W", power.battery_watts > 0 ? "OUT" : power.battery_watts < 0 ? "IN" : "IDLE",
+				watts(std::abs(power.battery_watts))) : "BAT N/A";
+		summary += fmt::format(" SMC {}W", watts(power.total_watts));
+		if (power.components_available) {
+			summary += fmt::format(" SUM {}W CPU {} GPU {} ANE {} RAM {} DISP {} MED {} OTHER {}",
+				watts(power.component_total_watts), watts(power.cpu_watts), watts(power.gpu_watts),
+				watts(power.ane_watts), watts(power.dram_watts), watts(power.display_watts),
+				watts(power.media_watts), watts(power.other_watts));
 		}
 		return uresize(summary, max(1, available_width));
 	}
@@ -801,6 +793,7 @@ namespace Cpu {
 				{"charging", "▲"},
 				{"discharging", "▼"},
 				{"full", "■"},
+				{"idle", "○"},
 				{"unknown", "○"}
 			};
 
@@ -929,7 +922,7 @@ namespace Cpu {
 	#ifdef GPU_SUPPORT
 		n_gpus_to_show = show_gpu ? (gpus.size() - (gpu_always ? 0 : Gpu::shown)) : 0;
 	#endif
-		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available)
+		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available or Power::current_power.battery_power_available)
 			and b_width >= 40 and b_height >= 8;
 		int max_row = b_height - 3 - (show_power_summary ? 1 : 0); // Reserve rows for load average and power summary.
 		max_row -= n_gpus_to_show;
@@ -1003,7 +996,7 @@ namespace Cpu {
 		}
 
 		//? macOS power summary. Component values come from IOReport energy
-		//? deltas; TOTAL is the board-level SMC reading and is not a sum of
+		//? deltas. Battery flow and the SMC reading remain separate from
 		//? the component counters.
 		if (show_power_summary) {
 			const auto power_line = power_summary(Power::current_power, b_width - 2);

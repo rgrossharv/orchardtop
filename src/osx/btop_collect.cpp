@@ -20,6 +20,7 @@ tab-size = 4
 
 #ifdef __APPLE__
 #include <Availability.h>
+#include "battery_power.hpp"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <arpa/inet.h>
@@ -175,21 +176,31 @@ namespace Power {
 
 	void refresh() {
 		static std::unique_ptr<Cpu::SMCConnection> smc;
+		// Invalidate each sample before reading: a failed sensor must not freeze.
+		current_power.total_watts = -1.0f;
+		current_power.total_available = false;
+		current_power.battery_watts = 0.0f;
+		current_power.battery_power_available = false;
 		try {
 			if (not smc) smc = std::make_unique<Cpu::SMCConnection>();
 			const double watts = smc->getPowerWatts();
 			if (std::isfinite(watts) and watts >= 0.0 and watts < 1000.0) {
-				// PSTR is a board-level reading. A small amount of smoothing keeps
-				// the total readable while preserving changes in workload.
-				constexpr double alpha = 0.35;
-				const double previous = current_power.total_watts;
-				current_power.total_watts = static_cast<float>(previous < 0.0 ? watts : previous * (1.0 - alpha) + watts * alpha);
+				current_power.total_watts = static_cast<float>(watts);
 				current_power.total_available = true;
-				current_power.total_is_estimate = false;
 			}
 		} catch (const std::exception&) {
-			// AppleSMC is optional on virtual machines and some future Macs.
 			smc.reset();
+		}
+
+		IORef battery(IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery")));
+		if (not battery.get()) return;
+		CFMutableDictionaryRef raw = nullptr;
+		const auto result = IORegistryEntryCreateCFProperties(battery, &raw, kCFAllocatorDefault, 0);
+		CFRef<CFMutableDictionaryRef> properties(raw);
+		if (result != kIOReturnSuccess or not raw) return;
+		if (const auto reading = read_battery_power(properties)) {
+			current_power.battery_watts = static_cast<float>(reading->watts);
+			current_power.battery_power_available = true;
 		}
 	}
 
@@ -501,8 +512,7 @@ namespace Gpu {
 		static void update_power(float& destination, const double energy, const double seconds) {
 			if (not std::isfinite(energy) or not std::isfinite(seconds) or seconds <= 0.0) return;
 			const double watts = max(0.0, energy / seconds);
-			constexpr double alpha = 0.35;
-			destination = static_cast<float>(destination < 0.0f ? watts : destination * (1.0 - alpha) + watts * alpha);
+			destination = static_cast<float>(watts);
 		}
 
 		static void publish_energy(const energy_totals& totals, const uint64_t dt) {
@@ -534,11 +544,6 @@ namespace Gpu {
 					}
 				}
 				if (any) ::Power::current_power.component_total_watts = static_cast<float>(total);
-				if (any and (not ::Power::current_power.total_available or ::Power::current_power.total_is_estimate)) {
-					::Power::current_power.total_watts = ::Power::current_power.component_total_watts;
-					::Power::current_power.total_available = true;
-					::Power::current_power.total_is_estimate = true;
-				}
 			}
 		}
 
@@ -593,12 +598,6 @@ namespace Gpu {
 			gpu_names.resize(gpu_names.size() + device_count);
 
 			initialized = true;
-
-			//? Take initial sample for delta computation when IOReport is available.
-			if (ior_sub) {
-				prev_sample = IOReportCreateSamples(ior_sub, ior_sub_chan ? ior_sub_chan : ior_chan, nullptr);
-				prev_sample_time = get_mach_time_ms();
-			}
 
 			//? Run init collect to populate names and supported functions
 			collect<1>(gpus.data());
@@ -711,6 +710,13 @@ namespace Gpu {
 			//? its channels but reject subscriptions from ordinary terminal apps.
 			//? Keep the GPU visible using the public IOKit PerformanceStatistics
 			//? dictionary instead of dropping the entire GPU panel.
+			gpus_slice[0].supported_functions.pwr_usage = false;
+			::Power::current_power.components_available = false;
+			for (auto* value : {&::Power::current_power.cpu_watts, &::Power::current_power.gpu_watts,
+				&::Power::current_power.ane_watts, &::Power::current_power.dram_watts,
+				&::Power::current_power.display_watts, &::Power::current_power.media_watts,
+				&::Power::current_power.other_watts, &::Power::current_power.component_total_watts}) *value = -1.0f;
+
 			if (not ior_sub) {
 				auto accelerator = get_accelerator_stats();
 				if (not accelerator.valid) return false;
@@ -842,6 +848,7 @@ namespace Gpu {
 
 			//? Store power usage (convert W to mW)
 			if (got_gpu_power) {
+				gpus_slice[0].supported_functions.pwr_usage = true;
 				gpus_slice[0].pwr_usage = static_cast<long long>(round(gpu_power_watts * 1000.0));
 				gpus_slice[0].pwr_max_usage = max(gpus_slice[0].pwr_max_usage, gpus_slice[0].pwr_usage);
 				gpus_slice[0].gpu_percent.at("gpu-pwr-totals").push_back(
@@ -1259,7 +1266,7 @@ namespace Cpu {
 		uint32_t percent = -1;
 		long seconds = -1;
 		float watts = -1.0f;
-		string status = "discharging";
+		string status = "unknown";
 		IOPSInfo_Wrap ps_info{};
 		if (ps_info()) {
 			IOPSList_Wrap one_ps_descriptor(ps_info());
@@ -1267,6 +1274,8 @@ namespace Cpu {
 				if (CFArrayGetCount(one_ps_descriptor())) {
 					CFDictionaryRef one_ps = IOPSGetPowerSourceDescription(ps_info(), CFArrayGetValueAtIndex(one_ps_descriptor(), 0));
 					has_battery = true;
+					auto source = CFDictionaryGetValue(one_ps, CFSTR(kIOPSPowerSourceStateKey));
+					if (source) status = CFEqual(source, CFSTR(kIOPSACPowerValue)) ? "idle" : "discharging";
 					CFNumberRef remaining = (CFNumberRef)CFDictionaryGetValue(one_ps, CFSTR(kIOPSTimeToEmptyKey));
 					int32_t estimatedMinutesRemaining;
 					if (remaining) {
@@ -1295,17 +1304,17 @@ namespace Cpu {
 			}
 		}
 
-		// PSTR is a board-level draw, so it is the useful battery drain
-		// number while unplugged. It is deliberately not shown as battery
-		// power while charging because that would include adapter input.
-		if (status == "discharging" and Power::current_power.total_available) {
-			watts = Power::current_power.total_watts;
-			// Prefer the raw-capacity/voltage estimate when available. It is
-			// derived from the same live draw shown in the power row and avoids
-			// stale or missing IOPS time estimates.
-			if (const auto estimated = Power::estimate_battery_seconds(watts); estimated.has_value())
-				seconds = estimated.value();
+		// Battery current is authoritative for flow, including discharge on AC
+		// and charging holds. Never substitute a board/component measurement.
+		if (Power::current_power.battery_power_available) {
+			const auto flow = Power::current_power.battery_watts;
+			watts = std::abs(flow);
+			status = flow > 0 ? "discharging" : flow < 0 ? "charging" : percent == 100 ? "full" : "idle";
+			if (flow > 0 and seconds <= 0) {
+				if (const auto estimated = Power::estimate_battery_seconds(flow)) seconds = *estimated;
+			} else if (flow <= 0) seconds = -1;
 		}
+
 		return {percent, watts, seconds, status};
 	}
 
