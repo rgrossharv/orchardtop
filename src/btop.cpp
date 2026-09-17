@@ -96,7 +96,7 @@ namespace Global {
 		{"#3099B6", "│         ▀████▀           │"},
 		{"#2688C2", "╰────── ORCHARDTOP ────────╯"},
 	};
-	const string Version = "1.4.11";
+	const string Version = "1.4.12";
 
 	int coreCount;
 	string overlay;
@@ -430,6 +430,7 @@ namespace Runner {
 		bool no_update;
 		bool force_redraw;
 		bool background_update;
+		bool power_only;
 		string overlay;
 		string clock;
 	};
@@ -529,22 +530,30 @@ namespace Runner {
 					if (box.starts_with("gpu"))
 						gpu_panels.push_back(box.back()-'0');
 
-				vector<Gpu::gpu_info> gpus;
+				vector<Gpu::gpu_info> empty_gpus;
+				auto* gpus = &empty_gpus;
 				if (gpu_in_cpu_panel or not gpu_panels.empty()) {
 					if (Global::debug) debug_timer("gpu", collect_begin);
-					gpus = Gpu::collect(conf.no_update);
+					gpus = &Gpu::collect(conf.no_update);
 					if (Global::debug) debug_timer("gpu", collect_done);
 				}
-				auto& gpus_ref = gpus;
+				auto& gpus_ref = *gpus;
 #endif // GPU_SUPPORT
 
+				//? Battery-only ticks share the runner lock and never resample graphs/processes.
+#if defined(__APPLE__) && defined(__arm64__)
+				if (conf.power_only) {
+					Power::refresh(true);
+					if (Cpu::has_battery) Cpu::refresh_battery_power();
+				}
+#endif
 				//? CPU
 				if (v_contains(conf.boxes, "cpu")) {
 					try {
 						if (Global::debug) debug_timer("cpu", collect_begin);
 
 						//? Start collect
-						auto cpu = Cpu::collect(conf.no_update);
+						auto& cpu = Cpu::collect(conf.no_update);
 
 						if (coreNum_reset) {
 							coreNum_reset = false;
@@ -564,7 +573,8 @@ namespace Runner {
 								gpus_ref,
 #endif // GPU_SUPPORT
 								conf.force_redraw,
-								conf.no_update
+								conf.no_update,
+								conf.power_only
 							);
 						}
 
@@ -598,7 +608,7 @@ namespace Runner {
 						if (Global::debug) debug_timer("mem", collect_begin);
 
 						//? Start collect
-						auto mem = Mem::collect(conf.no_update);
+						auto& mem = Mem::collect(conf.no_update);
 
 						if (Global::debug) debug_timer("mem", draw_begin);
 
@@ -618,7 +628,7 @@ namespace Runner {
 						if (Global::debug) debug_timer("net", collect_begin);
 
 						//? Start collect
-						auto net = Net::collect(conf.no_update);
+						auto& net = Net::collect(conf.no_update);
 
 						if (Global::debug) debug_timer("net", draw_begin);
 
@@ -638,7 +648,7 @@ namespace Runner {
 						if (Global::debug) debug_timer("proc", collect_begin);
 
 						//? Start collect
-						auto proc = Proc::collect(conf.no_update);
+						auto& proc = Proc::collect(conf.no_update);
 
 						if (Global::debug) debug_timer("proc", draw_begin);
 
@@ -763,9 +773,10 @@ namespace Runner {
 			Config::lock();
 
 			current_conf = {
-				(box == "all" ? Config::current_boxes : vector{box}),
+				(box == "all" ? Config::current_boxes : vector{box == "power" ? "cpu"s : box}),
 				no_update, force_redraw,
 				(not Config::getB("tty_mode") and Config::getB("background_update")),
+				box == "power",
 				Global::overlay,
 				Global::clock
 			};
@@ -1164,6 +1175,15 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 				Runner::run("clock");
 			}
 
+			#if defined(__APPLE__) && defined(__arm64__)
+			static uint64_t next_power = 0;
+			const auto now = time_ms();
+			if (now >= next_power) {
+				next_power = now + 1000;
+				if (now < future_time and not Menu::active and not Global::resized
+					and v_contains(Config::current_boxes, "cpu")) Runner::run("power", true);
+			}
+#endif
 			//? Start secondary collect & draw thread at the interval set by <update_ms> config value
 			if (time_ms() >= future_time and not Global::resized) {
 				Runner::run("all");

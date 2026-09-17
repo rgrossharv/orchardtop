@@ -163,6 +163,7 @@ struct IORef {
 	IORef& operator=(const IORef&) = delete;
 	operator io_object_t() const { return ref; }
 	io_object_t get() const { return ref; }
+	void reset(io_object_t new_ref = 0) { if (ref) IOObjectRelease(ref); ref = new_ref; }
 	io_object_t* ptr() { return &ref; }
 };
 
@@ -174,30 +175,36 @@ namespace Power {
 		return CFNumberGetValue((CFNumberRef)raw, kCFNumberDoubleType, &value);
 	}
 
-	void refresh() {
+	void refresh(bool battery_only) {
 		static std::unique_ptr<Cpu::SMCConnection> smc;
-		// Invalidate each sample before reading: a failed sensor must not freeze.
-		current_power.total_watts = -1.0f;
-		current_power.total_available = false;
+		if (not battery_only) {
+			// Invalidate each sample before reading: a failed sensor must not freeze.
+			current_power.total_watts = -1.0f;
+			current_power.total_available = false;
+
+			try {
+				if (not smc) smc = std::make_unique<Cpu::SMCConnection>();
+				const double watts = smc->getPowerWatts();
+				if (std::isfinite(watts) and watts >= 0.0 and watts < 1000.0) {
+					current_power.total_watts = static_cast<float>(watts);
+					current_power.total_available = true;
+				}
+			} catch (const std::exception&) {
+				smc.reset();
+			}
+
+		}
 		current_power.battery_watts = 0.0f;
 		current_power.battery_power_available = false;
-		try {
-			if (not smc) smc = std::make_unique<Cpu::SMCConnection>();
-			const double watts = smc->getPowerWatts();
-			if (std::isfinite(watts) and watts >= 0.0 and watts < 1000.0) {
-				current_power.total_watts = static_cast<float>(watts);
-				current_power.total_available = true;
-			}
-		} catch (const std::exception&) {
-			smc.reset();
-		}
-
-		IORef battery(IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery")));
+		// Retain the service handle; reconnect after a failed read (e.g. sleep/wake).
+		static IORef battery;
+		if (not battery.get())
+			battery.reset(IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery")));
 		if (not battery.get()) return;
 		CFMutableDictionaryRef raw = nullptr;
 		const auto result = IORegistryEntryCreateCFProperties(battery, &raw, kCFAllocatorDefault, 0);
 		CFRef<CFMutableDictionaryRef> properties(raw);
-		if (result != kIOReturnSuccess or not raw) return;
+		if (result != kIOReturnSuccess or not raw) { battery.reset(); return; }
 		if (const auto reading = read_battery_power(properties)) {
 			current_power.battery_watts = static_cast<float>(reading->watts);
 			current_power.battery_power_available = true;
@@ -631,10 +638,17 @@ namespace Gpu {
 				(const void**)keys, values, 2,
 				&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
 
-			CFRef<IOHIDEventSystemClientRef> system(IOHIDEventSystemClientCreate(kCFAllocatorDefault));
-			if (not system.get()) return -1;
-			IOHIDEventSystemClientSetMatching(system, match);
-			CFRef<CFArrayRef> services(IOHIDEventSystemClientCopyServices(system));
+			static CFRef<IOHIDEventSystemClientRef> system;
+			static CFRef<CFArrayRef> services;
+			static uint64_t next_discovery = 0;
+			if (time_ms() >= next_discovery) {
+				next_discovery = time_ms() + 60000;
+				services.reset();
+				system.reset(IOHIDEventSystemClientCreate(kCFAllocatorDefault));
+				if (not system.get()) return -1;
+				IOHIDEventSystemClientSetMatching(system, match);
+				services.reset(IOHIDEventSystemClientCopyServices(system));
+			}
 
 			if (not services.get()) return -1;
 
@@ -1175,7 +1189,8 @@ namespace Cpu {
 			}
 		}
 
-		sensor_future = std::async(std::launch::async, collect_sensors);
+		if (not sensor_future.valid())
+			sensor_future = std::async(std::launch::async, collect_sensors);
 	}
 
 	string get_cpuHz() {
@@ -1260,6 +1275,27 @@ namespace Cpu {
 		~IOPSList_Wrap() { CFRelease(data); }
 	};
 
+	static void apply_battery_power(tuple<int, float, long, string>& battery) {
+		auto& [percent, watts, seconds, status] = battery;
+		watts = -1.0f;
+
+		// Battery current is authoritative for flow, including discharge on AC
+		// and charging holds. Never substitute a board/component measurement.
+		if (Power::current_power.battery_power_available) {
+			const auto flow = Power::current_power.battery_watts;
+			watts = std::abs(flow);
+			status = flow > 0 ? "discharging" : flow < 0 ? "charging" : percent == 100 ? "full" : "idle";
+			if (flow > 0 and seconds <= 0) {
+				if (const auto estimated = Power::estimate_battery_seconds(flow)) seconds = *estimated;
+			} else if (flow <= 0) seconds = -1;
+		}
+
+	}
+
+	void refresh_battery_power() {
+		apply_battery_power(current_bat);
+	}
+
 	auto get_battery() -> tuple<int, float, long, string> {
 		if (not has_battery) return {0, 0, 0, ""};
 
@@ -1304,18 +1340,9 @@ namespace Cpu {
 			}
 		}
 
-		// Battery current is authoritative for flow, including discharge on AC
-		// and charging holds. Never substitute a board/component measurement.
-		if (Power::current_power.battery_power_available) {
-			const auto flow = Power::current_power.battery_watts;
-			watts = std::abs(flow);
-			status = flow > 0 ? "discharging" : flow < 0 ? "charging" : percent == 100 ? "full" : "idle";
-			if (flow > 0 and seconds <= 0) {
-				if (const auto estimated = Power::estimate_battery_seconds(flow)) seconds = *estimated;
-			} else if (flow <= 0) seconds = -1;
-		}
-
-		return {percent, watts, seconds, status};
+		auto battery = tuple{static_cast<int>(percent), watts, seconds, status};
+		apply_battery_power(battery);
+		return battery;
 	}
 
 	auto collect(bool no_update) -> cpu_info & {
@@ -1411,7 +1438,9 @@ namespace Cpu {
 		if (Config::getB("check_temp") and got_sensors)
 			update_sensors();
 
+		#if defined(__arm64__)
 		Power::refresh();
+		#endif
 		supports_watts = Power::current_power.cpu_watts >= 0.0f;
 		if (supports_watts)
 			cpu.usage_watts = Power::current_power.cpu_watts;

@@ -29,6 +29,8 @@ tab-size = 4
 #include <numeric>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
+#include <memory>
 
 extern "C" {
 typedef struct __IOHIDEvent *IOHIDEventRef;
@@ -62,6 +64,8 @@ CFDictionaryRef matching(int page, int usage) {
 	CFDictionaryRef dict = CFDictionaryCreate(0, (const void **)keys, (const void **)nums, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 	CFRelease(keys[0]);
 	CFRelease(keys[1]);
+	CFRelease(nums[0]);
+	CFRelease(nums[1]);
 	return dict;
 }
 
@@ -102,53 +106,67 @@ long long Cpu::ThermalSensors::getSensors() {
 }
 
 long long Cpu::ThermalSensors::getSensors(std::vector<long long>& core_temps) {
-	CFDictionaryRef thermalSensors = matching(0xff00, 5);  // 65280_10 = FF00_16
-	                                                       // thermalSensors's PrimaryUsagePage should be 0xff00 for M1 chip, instead of 0xff05
-	                                                       // can be checked by ioreg -lfx
-	IOHIDEventSystemClientRef system = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-	IOHIDEventSystemClientSetMatching(system, thermalSensors);
-	CFArrayRef matchingsrvs = IOHIDEventSystemClientCopyServices(system);
+	// One scan at a time; retain discovery across worker invocations, but
+	// rediscover periodically so sleep/wake and service changes recover.
+	struct Discovery {
+		IOHIDEventSystemClientRef system = nullptr;
+		CFArrayRef services = nullptr;
+		std::vector<std::pair<IOHIDServiceClientRef, std::string>> sensors;
+		std::chrono::steady_clock::time_point next{};
+		~Discovery() { if (services) CFRelease(services); if (system) CFRelease(system); }
+	};
+	static auto shared_cache = std::make_shared<Discovery>();
+	const auto cache_owner = shared_cache; // Keep services alive if exit joins an in-flight scan.
+	auto& cache = *cache_owner;
+	const auto now = std::chrono::steady_clock::now();
+	if (now >= cache.next) {
+		cache.next = now + std::chrono::seconds(60);
+		if (cache.services) CFRelease(cache.services);
+		if (cache.system) CFRelease(cache.system);
+		cache.services = nullptr;
+		cache.sensors.clear();
+		cache.system = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+		if (cache.system) {
+			auto match = matching(0xff00, 5);
+			IOHIDEventSystemClientSetMatching(cache.system, match);
+			CFRelease(match);
+			cache.services = IOHIDEventSystemClientCopyServices(cache.system);
+			if (cache.services) {
+				for (CFIndex i = 0; i < CFArrayGetCount(cache.services); ++i) {
+					auto service = (IOHIDServiceClientRef)CFArrayGetValueAtIndex(cache.services, i);
+					auto name = (CFStringRef)IOHIDServiceClientCopyProperty(service, CFSTR("Product"));
+					if (not name) continue;
+					char buf[200]{};
+					const bool valid = CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingASCII);
+					CFRelease(name);
+					if (not valid) continue;
+					std::string n(buf);
+					if (n.rfind("eACC", 0) == 0 or n.rfind("pACC", 0) == 0
+						or n.rfind("PMU tdie", 0) == 0 or n.rfind("SOC MTR Temp Sensor", 0) == 0)
+						cache.sensors.emplace_back(service, std::move(n));
+				}
+			}
+		}
+	}
 	std::vector<double> acc_temps;
 	std::vector<double> tdie_temps;
 	std::vector<double> soc_temps;
 	std::unordered_map<std::string, std::vector<double> > acc_named_temps;
 	std::unordered_map<int, std::vector<double> > tdie_indexed_temps;
-	if (matchingsrvs) {
-		long count = CFArrayGetCount(matchingsrvs);
-		for (int i = 0; i < count; i++) {
-			IOHIDServiceClientRef sc = (IOHIDServiceClientRef)CFArrayGetValueAtIndex(matchingsrvs, i);
-			if (sc) {
-				CFStringRef name = IOHIDServiceClientCopyProperty(sc, CFSTR("Product"));  // here we use ...CopyProperty
-				if (name) {
-					char buf[200];
-					CFStringGetCString(name, buf, 200, kCFStringEncodingASCII);
-					std::string n(buf);
-					// this is just a guess, nobody knows which sensors mean what
-					// on my system PMU tdie 3 and 9 are missing...
-					// there is also PMU tdev1-8 but it has negative values??
-					// there is also eACC for efficiency package but it only has 2 entries
-					// and pACC for performance but it has 7 entries (2 - 9) WTF
-					double temp = getValue(sc);
-					if (temp > 0 and temp < 150) {
-						if (n.rfind("eACC", 0) == 0 or n.rfind("pACC", 0) == 0) {
-							acc_temps.push_back(temp);
-							acc_named_temps[n].push_back(temp);
-						} else if (n.rfind("PMU tdie", 0) == 0) {
-							tdie_temps.push_back(temp);
-							int index = parse_sensor_index(n, "PMU tdie");
-							if (index >= 0) tdie_indexed_temps[index].push_back(temp);
-						} else if (n.rfind("SOC MTR Temp Sensor", 0) == 0) {
-							soc_temps.push_back(temp);
-						}
-					}
-					CFRelease(name);
-				}
-			}
+	for (const auto& [sc, n] : cache.sensors) {
+		const double temp = getValue(sc);
+		if (not (temp > 0 and temp < 150)) continue;
+		if (n.rfind("eACC", 0) == 0 or n.rfind("pACC", 0) == 0) {
+			acc_temps.push_back(temp);
+			acc_named_temps[n].push_back(temp);
+		} else if (n.rfind("PMU tdie", 0) == 0) {
+			tdie_temps.push_back(temp);
+			const int index = parse_sensor_index(n, "PMU tdie");
+			if (index >= 0) tdie_indexed_temps[index].push_back(temp);
+		} else {
+			soc_temps.push_back(temp);
 		}
-		CFRelease(matchingsrvs);
 	}
-	CFRelease(system);
-	CFRelease(thermalSensors);
 	core_temps.clear();
 	if (not tdie_indexed_temps.empty()) {
 		std::vector<int> indexes;

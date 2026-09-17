@@ -1,6 +1,6 @@
 # OrchardTop
 
-OrchardTop is a system monitor for Apple Silicon Macs.
+OrchardTop is a system monitor with Apple Silicon support and native btop monitoring on Linux and Intel Macs.
 
 It runs in Terminal. It shows CPU use, GPU use, power, memory, swap, disks,
 network use, and running apps.
@@ -24,9 +24,8 @@ wanted. That is a matter of taste, not an attack on either project.
 
 ## What you need
 
-- An M series Mac.
-- macOS.
-- Apple command line tools.
+- macOS with Apple command line tools, or Linux with a C++23 compiler.
+- Homebrew builds from source on both platforms.
 
 If you do not have the command line tools, run this once:
 
@@ -60,6 +59,24 @@ curl -fsSL https://raw.githubusercontent.com/rgrossharv/orchardtop/main/install.
 The installer checks that the Mac is Apple Silicon. It checks the downloaded
 file before it installs it. By default, it installs OrchardTop in
 `~/.local/bin`.
+
+## Platform behavior and efficiency
+
+`otop` launches the same application on every platform, with apple-dark as the
+fresh-install theme. Apple Silicon retains its unified-memory and GPU presets.
+Linux (including Ryzen/NVIDIA systems) and Intel Macs use the native btop
+collectors, standard presets, and swap-disk defaults. Existing custom settings
+are preserved; use a fresh config with `otop -c /path/to/new.conf` to try defaults.
+The Apple power-summary row and extra battery timer only run on Apple Silicon.
+Linux battery/total-power improvements remain future work.
+
+On Apple Silicon, battery watts in the corner and CPU summary share a reading
+refreshed approximately every second. Expensive collectors and graphs keep the
+configured `update_ms` cadence (2000 ms by default), as do battery percentage
+and time-remaining queries. The battery controller may
+repeat its last value; polling cannot make the hardware sample faster. Thermal
+service discovery is cached for 60 seconds, unrelated CPU sensors are skipped,
+and asynchronous temperature scans never overlap.
 
 ## Memory and swap
 
@@ -132,7 +149,7 @@ To check the raw values with the same parser used by the monitor:
 ./scripts/test-power.sh
 ```
 
-## Publish and upgrade v1.4.11
+## Publish and upgrade v1.4.12
 
 The release is prepared locally. From a regular Terminal, run:
 
@@ -142,7 +159,7 @@ cd /path/to/orchardtop
 ./scripts/release-brew.sh
 ```
 
-The version and release notes are prepared for v1.4.11. The script authenticates
+The version and release notes are prepared for v1.4.12. The script authenticates
 through GitHub CLI if necessary, tests and builds with GCC 15, publishes the
 tag, waits for GitHub Actions, and checks the downloaded release checksum. It
 then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the

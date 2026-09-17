@@ -132,7 +132,7 @@ namespace Power {
 	extern power_info current_power;
 
 #ifdef __APPLE__
-	void refresh();
+	void refresh(bool battery_only = false);
 	std::optional<long> estimate_battery_seconds(float watts);
 #endif
 }
@@ -276,7 +276,8 @@ namespace Cpu {
 		const vector<Gpu::gpu_info>& gpu,
 #endif
 		bool force_redraw = false,
-		bool data_same = false
+		bool data_same = false,
+		bool power_only = false
 	);
 
 	//* Parse /proc/cpu info for mapping of core ids
@@ -287,6 +288,9 @@ namespace Cpu {
 
 	//* Get battery info from /sys
 	auto get_battery() -> tuple<int, float, long, string>;
+#ifdef __APPLE__
+	void refresh_battery_power();
+#endif
 
 	string trim_name(string);
 }

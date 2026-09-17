@@ -273,13 +273,7 @@ namespace Config {
 	};
 
 	std::unordered_map<std::string_view, string> strings = {
-		{"color_theme",
-#if defined(__APPLE__) && defined(__arm64__)
-			"apple-dark"
-#else
-			"Default"
-#endif
-		},
+		{"color_theme", "apple-dark"},
 		{"shown_boxes", "cpu mem net proc"},
 		{"graph_symbol", "braille"},
 		{"disable_presets", "Off"},

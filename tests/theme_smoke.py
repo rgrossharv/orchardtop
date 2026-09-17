@@ -4,6 +4,7 @@ import fcntl
 import os
 from pathlib import Path
 import pty
+import platform
 import re
 import select
 import signal
@@ -63,11 +64,16 @@ with tempfile.TemporaryDirectory() as tmp:
         text = output.decode(errors='replace')
         assert process.returncode in (0, -signal.SIGTERM), text[-2000:]
         assert 'ERROR' not in text, text[-2000:]
-        if theme != 'TTY':
+        if theme is None or (theme == 'Default' and platform.system() == 'Darwin' and platform.machine() == 'arm64'):
             assert '\x1b[38;2;93;156;255m' in text, 'apple-dark CPU outline absent'
             assert 'color_theme = "apple-dark"' in config.read_text(), 'Default not saved/migrated'
         else:
-            assert 'color_theme = "TTY"' in config.read_text(), 'Custom choice overwritten'
+            assert f'color_theme = "{theme}"' in config.read_text(), 'Custom choice overwritten'
+        if platform.system() != 'Darwin' or platform.machine() != 'arm64':
+            saved = config.read_text()
+            assert 'swap_disk = true' in saved, 'Native swap-disk default changed'
+            assert 'presets = "cpu:1:default,proc:0:default' in saved, 'Native presets missing'
+            assert 'BAT OUT' not in text and 'SMC ' not in text, 'Apple summary on native platform'
         readings = re.findall(r'BAT (?:OUT|IN|IDLE) [0-9.]+W', text)
         print(f'Theme {theme or "fresh"}, {width} columns: passed; battery samples: {readings[-2:]}')
 print('Terminal startup and theme checks passed')

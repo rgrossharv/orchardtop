@@ -9,7 +9,18 @@ permissions:
   contents: write
 
 jobs:
+  linux:
+    name: Test Linux x86_64 fallback
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-14
+      - run: make QUIET=true CXX=g++-14 GPU_SUPPORT=true -j2
+      - run: python3 tests/theme_smoke.py
+      - run: ./otop --version
+
   release:
+    needs: linux
     name: Build Apple Silicon release
     runs-on: macos-14
 
@@ -36,7 +47,9 @@ jobs:
         run: make QUIET=true CXX="$(brew --prefix gcc@15)/bin/g++-15" LDFLAGS='-static-libgcc -static-libstdc++'
 
       - name: Test terminal startup and theme
-        run: python3 tests/theme_smoke.py
+        run: |
+          python3 tests/theme_smoke.py
+          python3 tests/power_refresh.py
 
       - name: Package OrchardTop
         run: |

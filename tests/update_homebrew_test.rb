@@ -46,6 +46,8 @@ class UpdateHomebrewTest < Minitest::Test
     assert_includes changed, 'CXX=#{Formula["gcc@15"].opt_bin}/g++-15'
     assert_includes changed, '(share / "orchardtop").install "themes"'
     assert_includes changed, 'bin.install "otop"'
+    refute_includes changed, 'depends_on arch: :arm64'
+    refute_includes changed, 'depends_on :macos'
     assert_equal 1, changed.scan('depends_on "gcc@15"').length
     _, error, result = update
     assert result.success?, error

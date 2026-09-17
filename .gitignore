@@ -88,3 +88,6 @@ CMakeUserPresets.json
 
 # CLion
 cmake-build-*
+
+# Private local publishing helpers (never include in releases).
+/.local-release/

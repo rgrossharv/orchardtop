@@ -590,7 +590,8 @@ namespace Cpu {
 		const vector<Gpu::gpu_info>& gpus,
 #endif // GPU_SUPPORT
 		bool force_redraw,
-		bool data_same
+		bool data_same,
+		bool power_only
 	) {
 		if (Runner::stopping) return "";
 		if (force_redraw) redraw = true;
@@ -826,6 +827,29 @@ namespace Cpu {
 			bat_pos = bat_len = 0;
 		}
 
+		int n_gpus_to_show = 0;
+	#ifdef GPU_SUPPORT
+		n_gpus_to_show = show_gpu ? (gpus.size() - (gpu_always ? 0 : Gpu::shown)) : 0;
+	#endif
+		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available or Power::current_power.battery_power_available)
+			and b_width >= 40 and b_height >= 8;
+		auto draw_power_summary = [&] {
+			//? macOS power summary. Component values come from IOReport energy
+			//? deltas. Battery flow and the SMC reading remain separate from
+			//? the component counters.
+			if (show_power_summary) {
+				const auto power_line = power_summary(Power::current_power, b_width - 2);
+				const int power_row = b_height - 3 - n_gpus_to_show;
+				out += Mv::to(b_y + power_row, b_x + 1) + Theme::c("main_fg") + Fx::b
+					+ ljust(power_line, b_width - 2) + Fx::ub;
+			}
+		};
+		// Battery ticks do not rebuild or repaint unchanged graphs and meters.
+		if (power_only and not redraw) {
+			draw_power_summary();
+			return out + Fx::reset;
+		}
+
 		try {
 			//? Cpu/Gpu graphs
 			out += Fx::ub + Mv::to(y + 1, x + 1);
@@ -918,12 +942,7 @@ namespace Cpu {
 			throw std::runtime_error("graphs, clock, meter : " + string{e.what()});
 		}
 
-		int n_gpus_to_show = 0;
-	#ifdef GPU_SUPPORT
-		n_gpus_to_show = show_gpu ? (gpus.size() - (gpu_always ? 0 : Gpu::shown)) : 0;
-	#endif
-		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available or Power::current_power.battery_power_available)
-			and b_width >= 40 and b_height >= 8;
+
 		int max_row = b_height - 3 - (show_power_summary ? 1 : 0); // Reserve rows for load average and power summary.
 		max_row -= n_gpus_to_show;
 
@@ -995,15 +1014,7 @@ namespace Cpu {
 			out += Mv::to(b_y + cy, b_x + 1) + string(max(b_width - len - 2, 0), ' ') + Theme::c("main_fg") + Fx::b + load_avg_pre + Fx::ub + load_avg;
 		}
 
-		//? macOS power summary. Component values come from IOReport energy
-		//? deltas. Battery flow and the SMC reading remain separate from
-		//? the component counters.
-		if (show_power_summary) {
-			const auto power_line = power_summary(Power::current_power, b_width - 2);
-			const int power_row = b_height - 3 - n_gpus_to_show;
-			out += Mv::to(b_y + power_row, b_x + 1) + Theme::c("main_fg") + Fx::b
-				+ ljust(power_line, b_width - 2) + Fx::ub;
-		}
+		draw_power_summary();
 
 	#ifdef GPU_SUPPORT
 		//? Gpu brief info

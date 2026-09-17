@@ -15,8 +15,12 @@ end
 replace_once(formula, /tag: "v[^"]+"/, "tag: \"v#{version}\"")
 replace_once(formula, /revision: "[0-9a-f]+"/, "revision: \"#{revision}\"")
 replace_once(formula, /^  version "[^"]+"$/, "  version \"#{version}\"")
+# Drop the Apple-only restriction; platform collectors are selected by the build.
+formula.sub!(/^  depends_on arch: :arm64\n/, '')
+formula.sub!(/^  depends_on :macos\n/, '')
+formula.sub!('Pretty system monitor for Apple Silicon Macs', 'System monitor with Apple Silicon support')
 unless formula.include?('depends_on "gcc@15"')
-  replace_once(formula, /^  depends_on arch: :arm64$/, "  depends_on arch: :arm64\n  depends_on \"gcc@15\"")
+  replace_once(formula, /^  version "[^"]+"$/, "  version \"#{version}\"\n  depends_on \"gcc@15\"")
 end
 replace_once(formula, /^    system "make", "QUIET=true"(?:, "CXX=#\{Formula\["gcc@15"\]\.opt_bin\}\/g\+\+-15")?$/,
              '    system "make", "QUIET=true", "CXX=#{Formula["gcc@15"].opt_bin}/g++-15"')

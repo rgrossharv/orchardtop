@@ -1,26 +1,17 @@
-# OrchardTop v1.4.11
+# OrchardTop v1.4.12
 
-- Repair the release compiler setup with GCC 15 and support the older Apple
-  Clang C++23 flag spelling in ordinary builds.
-- Provide a resumable release script that publishes the release, verifies its
-  checksum, updates the Homebrew tap, and upgrades and tests the installed app.
-- Make the terminal smoke test finish reliably on CI pseudo-terminals.
+- Refresh Apple Silicon battery watts in both locations about once per second
+  without accelerating process, disk, network, GPU, or graph sampling.
+- Redraw only the two power readouts on battery ticks and avoid copying
+  collector data and graph histories during rendering.
+- Cache thermal service discovery, skip unrelated CPU sensors, fix Core
+  Foundation leaks, and avoid overlapping asynchronous temperature scans.
+- Keep native btop collectors, presets, and swap defaults on Linux and Intel
+  Macs, with the `otop` launcher and apple-dark default theme on all platforms.
+- Remove the Homebrew formula's ARM-only restriction during release updates.
+- Gate publication on an x86_64 Linux build and terminal/theme smoke test.
 
-- Show battery flow first: `BAT OUT` is power supplied by the battery, `BAT IN`
-  is power entering it, and `BAT IDLE` is measured zero current.
-- Prefer InstantAmperage × Voltage from one AppleSmartBattery snapshot; fall back
-  to the driver's averaged Amperage. Decode signed current correctly and avoid
-  extra smoothing across charging/discharging transitions.
-- Keep SMC readings and IOReport component subtotals separate. Never replace
-  battery draw with a component subtotal, charger rating, or board sensor.
-- Clear failed sensor samples; support floating-point SMC power keys.
-- Preserve macOS's discharge ETA when available; estimate it from battery
-  capacity and battery draw only when the OS estimate is unavailable.
-- Fix a startup crash when migrating an existing `Default` theme configuration.
-- Embed apple-dark so the default palette works even without theme files.
-- Add power regression tests, a live read-only diagnostic, and a resumable
-  GitHub publish/build/download/upgrade script.
-
-Battery watts are sensor-reported electrical flow, not a calibrated external
-measurement. The battery controller controls sampling cadence. On AC, charging
-watts do not represent total computer consumption or wall-plug power.
+The hardware controls battery sample cadence; repeated readings are expected.
+Linux battery and total-power enhancements remain future work. Existing custom
+configuration is preserved. The standalone download remains macOS ARM64;
+Homebrew builds the source for the target platform.
