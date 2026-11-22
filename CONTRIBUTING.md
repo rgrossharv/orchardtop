@@ -44,3 +44,16 @@ This code came from btop. Please keep its basic style:
 
 New code must work with the Apache License 2.0 used by this project. Keep old
 copyright and license notes. Mark files when you change them.
+
+## General guidelines
+
+These come from btop's contributing guide:
+
+- Put opening curly braces `{` at the end of the statement or condition line.
+- Use [RAII](https://en.cppreference.com/w/cpp/language/raii).
+- Prefer the standard algorithms library.
+- Prefer `fmt::format` or `fmt::format_to` over manual string concatenation.
+- Do not add includes when an already included library can do the job.
+- Avoid writing to disk.
+- Only log when something important has changed.
+- Benchmark changes that could slow down collection or drawing.
