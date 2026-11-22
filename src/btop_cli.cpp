@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include <unistd.h>
 
@@ -21,6 +22,7 @@
 
 #include "btop_config.hpp"
 #include "btop_shared.hpp"
+#include "charge_estimate.hpp"
 #include "config.h"
 
 using namespace std::string_view_literals;
@@ -60,6 +62,9 @@ namespace Cli {
 
 			if (arg == "--default-config") {
 				return default_config();
+			}
+			if (arg == "--timetofull") {
+				return time_to_full();
 			}
 			if (arg == "-h" || arg == "--help") {
 				usage();
@@ -243,6 +248,39 @@ namespace Cli {
 		return std::unexpected { 0 };
 	}
 
+	//* Average a few readings: battery controllers update every second or so
+	//* and single samples jump around.
+	auto time_to_full() noexcept -> Result {
+		try {
+			constexpr int samples = 3;
+			std::optional<Power::BatterySnapshot> last;
+			double battery = 0, adapter = 0, system = 0;
+			int n_battery = 0, n_adapter = 0, n_system = 0;
+			for (int i = 0; i < samples; ++i) {
+				if (i > 0) std::this_thread::sleep_for(std::chrono::seconds(1));
+				auto snap = Power::battery_snapshot();
+				if (not snap) break;
+				if (snap->flow.battery_flow) { battery += *snap->flow.battery_flow; ++n_battery; }
+				if (snap->flow.adapter_in) { adapter += *snap->flow.adapter_in; ++n_adapter; }
+				if (snap->flow.system_load) { system += *snap->flow.system_load; ++n_system; }
+				last = std::move(snap);
+			}
+			if (not last) {
+				fmt::println("No battery found, so there is nothing to charge.");
+				return std::unexpected { 2 };
+			}
+			if (n_battery) last->flow.battery_flow = battery / n_battery;
+			if (n_adapter) last->flow.adapter_in = adapter / n_adapter;
+			if (n_system) last->flow.system_load = system / n_system;
+			const auto estimate = Power::estimate_charge(*last);
+			fmt::print("{}", Power::format_charge_report(*last, estimate, samples, isatty(STDOUT_FILENO)));
+			return std::unexpected { 0 };
+		} catch (const std::exception& e) {
+			error(fmt::format("Could not read the battery: {}", e.what()));
+			return std::unexpected { 1 };
+		}
+	}
+
 	void usage() noexcept {
 		fmt::println("{0}Usage:{1} {2}orchardtop{1} [OPTIONS]\n", BOLD_UNDERLINE, RESET, BOLD);
 	}
@@ -261,6 +299,7 @@ namespace Cli {
 			"  {2}    --no-tty{1}            Force disable tty mode\n"
 			"  {2}-u, --update{1} <ms>       Set an initial update rate in milliseconds\n"
 			"  {2}    --default-config{1}    Print default config to standard output\n"
+			"  {2}    --timetofull{1}        Estimate time until the battery reaches 80% and 100%, then exit\n"
 			"  {2}-h, --help{1}              Show this help message and exit\n"
 			"  {2}-V, --version{1}           Show a version message and exit (more with --version)\n",
 			BOLD_UNDERLINE, RESET, BOLD

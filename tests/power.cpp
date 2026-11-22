@@ -81,5 +81,35 @@ int main() {
         assert(t.system_in_watts == 0.0); // Unplugged: nothing enters.
         CFRelease(adapter); CFRelease(tele); CFRelease(props);
     }
-    std::cout << "Battery current, transitions, missing data, and SMC decoding passed; system telemetry passed\n";
+    {
+        auto props = CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        auto set = [&](CFStringRef k, int64_t v) {
+            auto n = CFNumberCreate(nullptr, kCFNumberSInt64Type, &v);
+            CFDictionarySetValue(props, k, n);
+            CFRelease(n);
+        };
+        assert(!Power::read_battery_snapshot(props));
+        set(CFSTR("CurrentCapacity"), 55);
+        set(CFSTR("MaxCapacity"), 100);
+        set(CFSTR("AppleRawCurrentCapacity"), 2600);
+        set(CFSTR("AppleRawMaxCapacity"), 4800);
+        set(CFSTR("Voltage"), 12000);
+        set(CFSTR("InstantAmperage"), 3000);   // charging at 36 W
+        set(CFSTR("AvgTimeToFull"), 65535);    // no estimate
+        CFDictionarySetValue(props, CFSTR("IsCharging"), kCFBooleanTrue);
+        CFDictionarySetValue(props, CFSTR("ExternalConnected"), kCFBooleanTrue);
+        auto snap = Power::read_battery_snapshot(props);
+        assert(snap && std::abs(snap->percent - 55) < 1e-9 && snap->state == "Charging");
+        assert(std::abs(snap->energy_full_wh - 57.6) < 1e-9 && std::abs(snap->energy_now_wh - 31.2) < 1e-9);
+        assert(!snap->os_seconds_to_full);
+        assert(snap->flow.battery_flow && std::abs(*snap->flow.battery_flow + 36.0) < 1e-9);
+        auto est = Power::estimate_charge(*snap);
+        assert(est.charging && est.targets[0].seconds && est.targets[1].seconds);
+        set(CFSTR("AvgTimeToFull"), 42);
+        assert(Power::read_battery_snapshot(props)->os_seconds_to_full == 42 * 60.0);
+        CFDictionarySetValue(props, CFSTR("FullyCharged"), kCFBooleanTrue);
+        assert(Power::read_battery_snapshot(props)->state == "Full");
+        CFRelease(props);
+    }
+    std::cout << "Battery current, transitions, missing data, and SMC decoding passed; system telemetry, battery snapshot passed\n";
 }

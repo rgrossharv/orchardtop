@@ -869,7 +869,8 @@ static auto configure_tty_mode(std::optional<bool> force_tty) {
 			cli = result.value();
 		} else {
 			auto error = result.error();
-			if (error != 0) {
+			// 1 = bad arguments; other codes (e.g. 2 from --timetofull) are not usage errors.
+			if (error == 1) {
 				Cli::usage();
 				Cli::help_hint();
 			}

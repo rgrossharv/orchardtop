@@ -2,11 +2,12 @@
 // OrchardTop battery electrical measurement. No component/adapter substitution.
 #pragma once
 #include <CoreFoundation/CoreFoundation.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
 #include <initializer_list>
-#include "../power_flow.hpp"
+#include "../charge_estimate.hpp"
 
 namespace Power {
 struct BatteryReading {
@@ -85,4 +86,49 @@ inline SystemTelemetry read_system_telemetry(CFDictionaryRef properties) {
     if (out.external_connected == false) out.system_in_watts = 0.0;
     return out;
 }
+
+//* State of charge and capacity for time-to-full estimates.
+inline std::optional<BatterySnapshot> read_battery_snapshot(CFDictionaryRef properties) {
+    if (!properties) return std::nullopt;
+    auto number = [&](CFStringRef key) -> std::optional<double> {
+        auto value = CFDictionaryGetValue(properties, key);
+        int64_t raw = 0;
+        if (!value || CFGetTypeID(value) != CFNumberGetTypeID()
+            || !CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberSInt64Type, &raw)) return std::nullopt;
+        return static_cast<double>(raw);
+    };
+    auto flag = [&](CFStringRef key) -> std::optional<bool> {
+        auto value = CFDictionaryGetValue(properties, key);
+        if (!value || CFGetTypeID(value) != CFBooleanGetTypeID()) return std::nullopt;
+        return static_cast<bool>(CFBooleanGetValue(static_cast<CFBooleanRef>(value)));
+    };
+    BatterySnapshot s;
+    const auto current = number(CFSTR("CurrentCapacity"));
+    const auto max = number(CFSTR("MaxCapacity"));
+    if (!current || !max || *max <= 0) return std::nullopt;
+    // Apple Silicon reports CurrentCapacity as a percentage (MaxCapacity = 100).
+    s.percent = std::clamp(*current / *max * 100.0, 0.0, 100.0);
+    const auto raw_now = number(CFSTR("AppleRawCurrentCapacity"));
+    const auto raw_max = number(CFSTR("AppleRawMaxCapacity"));
+    const auto voltage = number(CFSTR("Voltage"));
+    if (raw_now && raw_max && voltage && *raw_max > 0 && *voltage > 0 && *voltage < 100000) {
+        s.energy_now_wh = *raw_now * *voltage / 1e6;   // mAh * mV -> Wh
+        s.energy_full_wh = *raw_max * *voltage / 1e6;
+    }
+    const bool external = flag(CFSTR("ExternalConnected")).value_or(false);
+    if (flag(CFSTR("FullyCharged")).value_or(false)) s.state = "Full";
+    else if (flag(CFSTR("IsCharging")).value_or(false)) s.state = "Charging";
+    else if (external) s.state = "Not charging";
+    else s.state = "Discharging";
+    // AvgTimeToFull is in minutes; 65535 means the controller has no estimate.
+    if (const auto minutes = number(CFSTR("AvgTimeToFull")); minutes && *minutes > 0 && *minutes < 65535)
+        s.os_seconds_to_full = *minutes * 60.0;
+    if (const auto reading = read_battery_power(properties)) s.flow.battery_flow = reading->watts;
+    const auto telemetry = read_system_telemetry(properties);
+    s.flow.adapter_in = telemetry.system_in_watts;
+    s.flow.system_load = telemetry.system_load_watts;
+    s.flow.adapter_connected = telemetry.external_connected;
+    return s;
 }
+}
+

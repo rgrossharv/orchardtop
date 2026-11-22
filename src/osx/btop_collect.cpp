@@ -227,6 +227,17 @@ namespace Power {
 		current_power.net_available = flow.net_available;
 	}
 
+	std::optional<BatterySnapshot> battery_snapshot() {
+		const auto service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+		if (service == 0) return std::nullopt;
+		IORef battery(service);
+		CFMutableDictionaryRef raw = nullptr;
+		if (IORegistryEntryCreateCFProperties(battery, &raw, kCFAllocatorDefault, 0) != kIOReturnSuccess or not raw)
+			return std::nullopt;
+		CFRef<CFMutableDictionaryRef> properties(raw);
+		return read_battery_snapshot(properties);
+	}
+
 	std::optional<long> estimate_battery_seconds(const float watts) {
 		if (not std::isfinite(watts) or watts <= 0.0f) return std::nullopt;
 

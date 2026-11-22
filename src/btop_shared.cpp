@@ -29,6 +29,7 @@ tab-size = 4
 #include "btop_config.hpp"
 #include "btop_shared.hpp"
 #include "btop_tools.hpp"
+#include "charge_estimate.hpp"
 
 namespace fs = std::filesystem;
 namespace rng = std::ranges;
@@ -36,6 +37,10 @@ using namespace Tools;
 
 namespace Power {
 	power_info current_power;
+
+#if not defined(__linux__) and not defined(__APPLE__)
+	std::optional<BatterySnapshot> battery_snapshot() { return std::nullopt; }
+#endif
 
 #if not defined(__linux__)
 	bool row_available() {

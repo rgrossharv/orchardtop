@@ -36,6 +36,9 @@ namespace Cli {
 
 	using Result = std::expected<Cli, std::int32_t>;
 
+	// Print the battery time-to-80%/100% estimate (--timetofull)
+	[[nodiscard]] auto time_to_full() noexcept -> Result;
+
 	// Parse the command line arguments
 	[[nodiscard]] auto parse(std::span<const std::string_view> args) noexcept -> Result;
 

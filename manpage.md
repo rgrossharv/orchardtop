@@ -12,7 +12,7 @@ orchardtop - Apple Silicon system monitor based on btop.
 
 **orchardtop** [**-c** _file_] [**-d**] [**-f** _filter_] [**-l**] [**-p** _id_] [**-t**] [**-u** _ms_] [**\-\-force-utf**] [**\-\-themes-dir** _dir_]
 
-**orchardtop** [**\-\-default-config** | {**-h** | **\-\-help**} | {**-V** | **\-\-version**}]
+**orchardtop** [**\-\-default-config** | **\-\-timetofull** | {**-h** | **\-\-help**} | {**-V** | **\-\-version**}]
 
 # DESCRIPTION
 
@@ -55,6 +55,11 @@ starting with two dashes ('-'). A summary of options is included below.
 
 **\-\-default-config**
 :   Print default config to standard output.
+
+**\-\-timetofull**
+:   Print how long the battery should take to reach 80% and 100% at the
+    current charge power (averaged over three one-second readings), then exit.
+    Exits with status 2 when there is no battery.
 
 **-h**, **\-\-help**
 :   Show summary of options.

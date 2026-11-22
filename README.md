@@ -168,6 +168,36 @@ The macOS time-to-empty estimate is preserved when available; otherwise a batter
 capacity/voltage/draw estimate is used. That ETA changes with workload and battery
 condition. Missing measurements are never replaced with a component subtotal.
 
+### Time to 80% and 100%
+
+```bash
+otop --timetofull
+```
+
+```text
+OrchardTop battery charge estimate
+  Battery    55%  (30.1 of 54.7 Wh)  Charging
+  Power      CHG 61.2 W   SYS ~18.4 W   NET +42.8 W
+  Into cell  +42.8 W  (battery sensor, 3-sample average)
+
+  To  80%    in 0h 19m     13.7 Wh
+  To 100%    in ~0h 53m    24.6 Wh   (charging slows after 80%)
+```
+
+It takes three readings one second apart and averages the power going into
+the battery. It uses the battery's own sensor when there is one, and otherwise
+charger-in minus system-load. Up to 80% the time is simply energy needed ÷
+power. Above 80%, lithium-ion charging slows down, so OrchardTop models the
+power tapering to 15% of its 80% value by 100%. That's why the 100% figure has
+a `~`. When macOS (`AvgTimeToFull`) or Linux (`time_to_full_now`) publishes
+its own estimate, it is shown too. A Linux charge limit
+(`charge_control_end_threshold`) is respected: targets above it are reported
+as not expected. When unplugged, it shows time to empty instead. With no
+battery it exits with status 2.
+
+The estimate assumes your workload stays the same: opening something heavy
+lowers the power going into the battery and pushes the times out.
+
 To check the raw values with the same parser used by the monitor:
 
 ```bash
@@ -175,7 +205,7 @@ To check the raw values with the same parser used by the monitor:
 ./scripts/test-power.sh
 ```
 
-## Publish and upgrade v1.4.14
+## Publish and upgrade v1.4.15
 
 The release is prepared locally. From a regular Terminal, run:
 
@@ -185,7 +215,7 @@ cd /path/to/orchardtop
 ./scripts/release-brew.sh
 ```
 
-The version and release notes are prepared for v1.4.14. The script authenticates
+The version and release notes are prepared for v1.4.15. The script authenticates
 through GitHub CLI if necessary, tests and builds with GCC 15, publishes the
 tag, waits for GitHub Actions, and checks the downloaded release checksum. It
 then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the
