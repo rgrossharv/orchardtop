@@ -191,6 +191,13 @@ tag, waits for GitHub Actions, and checks the downloaded release checksum. It
 then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the
 Homebrew upgrade, and verifies the formula test, executable version, and theme.
 
+Development happens on the self-hosted Forgejo (`origin`,
+`ssh://git@ryland-gross-lenovo-k450e.tail1ca380.ts.net:2222/rgrossharv/orchardtop.git`).
+Releases still publish through GitHub because GitHub Actions builds the
+release and the Homebrew tap downloads from it. The scripts find whichever
+remote points at `github.com/rgrossharv/orchardtop` and push the release
+there, then push the same tag to `origin`.
+
 It requires a clean commit on `main`. A rerun reuses a matching tag and tap
 update. It refuses to overwrite a different commit's tag or downgrade the tap.
 The failed `v1.4.9` tag is preserved. If the build itself fails, inspect GitHub

@@ -11,10 +11,10 @@ commit=$(git rev-parse HEAD)
 [[ "$branch" == main ]] || { echo 'Release from main only.' >&2; exit 1; }
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 [[ -z "$(git status --porcelain)" ]] || { echo 'Commit the prepared changes before releasing.' >&2; exit 1; }
-case "$(git remote get-url origin)" in
-    https://github.com/rgrossharv/orchardtop|https://github.com/rgrossharv/orchardtop.git|git@github.com:rgrossharv/orchardtop.git) ;;
-    *) echo 'Unexpected origin; refusing to publish.' >&2; exit 1 ;;
-esac
+# Releases publish through GitHub (Actions + Homebrew); the Forgejo origin is
+# updated alongside it when present.
+gh_remote=$(git remote -v | awk '$2 ~ /github\.com[:\/]rgrossharv\/orchardtop(\.git)?$/ && $3 == "(push)" {print $1; exit}')
+[[ -n "$gh_remote" ]] || { echo 'No git remote points at github.com/rgrossharv/orchardtop; refusing to publish.' >&2; exit 1; }
 if [[ "${1:-}" == --dry-run ]]; then
     echo "Would push $commit on main, publish $tag via GitHub Actions, then install into ${ORCHARDTOP_INSTALL_DIR:-$HOME/.local}."
     exit 0
@@ -26,15 +26,18 @@ if ! gh auth status --hostname github.com >/dev/null 2>&1; then
     gh auth login --hostname github.com --git-protocol https --web
 fi
 gh auth setup-git --hostname github.com
-git fetch origin main --tags
-git merge-base --is-ancestor origin/main HEAD || { echo 'Remote main has newer commits. Integrate them and retest first.' >&2; exit 1; }
+git fetch "$gh_remote" main --tags
+git merge-base --is-ancestor "$gh_remote/main" HEAD || { echo 'Remote main has newer commits. Integrate them and retest first.' >&2; exit 1; }
 if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
     [[ "$(git rev-list -n 1 "$tag")" == "$commit" ]] || { echo "$tag already belongs to another commit." >&2; exit 1; }
 else
     git tag -a "$tag" -m "OrchardTop $version: battery power accuracy and built-in apple-dark"
 fi
 # No force push. Atomic publication keeps main and the release tag together.
-git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag"
+git push --atomic "$gh_remote" HEAD:refs/heads/main "refs/tags/$tag"
+    if [[ "$gh_remote" != origin ]] && git remote get-url origin >/dev/null 2>&1; then
+        git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag" || echo "Warning: could not push $tag to origin (Forgejo)." >&2
+    fi
 run_id=''
 for ((attempt=0; attempt<60; attempt++)); do
     run_id=$(gh run list --repo "$repo" --workflow release.yml --commit "$commit" --event push --limit 30 --json databaseId,headBranch --jq ".[] | select(.headBranch == \"$tag\") | .databaseId" | head -1)

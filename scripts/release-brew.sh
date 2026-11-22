@@ -12,10 +12,10 @@ commit=$(git rev-parse HEAD)
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid source version.'
 [[ $(git branch --show-current) == main ]] || fail 'Run from main.'
 [[ -z $(git status --porcelain) ]] || fail 'Commit local changes first.'
-case $(git remote get-url origin) in
-    https://github.com/rgrossharv/orchardtop|https://github.com/rgrossharv/orchardtop.git|git@github.com:rgrossharv/orchardtop.git) ;;
-    *) fail 'Unexpected origin repository.' ;;
-esac
+# Releases publish through GitHub (Actions + Homebrew); the Forgejo origin is
+# updated alongside it when present.
+gh_remote=$(git remote -v | awk '$2 ~ /github\.com[:\/]rgrossharv\/orchardtop(\.git)?$/ && $3 == "(push)" {print $1; exit}')
+[[ -n "$gh_remote" ]] || fail 'No git remote points at github.com/rgrossharv/orchardtop.'
 if [[ $# == 1 && $1 == --dry-run ]]; then
     echo "Would publish $tag at $commit, update $tap_repo, and upgrade $formula_name."
     echo 'This preview does not contact GitHub or modify Homebrew.'
@@ -28,10 +28,10 @@ for command in gh brew ruby python3; do
 done
 gh auth status --hostname github.com >/dev/null 2>&1 || gh auth login --hostname github.com --git-protocol https --web
 gh auth setup-git --hostname github.com
-git fetch origin main --tags
-git merge-base --is-ancestor origin/main HEAD || fail 'Remote main has new changes. Integrate them before releasing.'
+git fetch "$gh_remote" main --tags
+git merge-base --is-ancestor "$gh_remote/main" HEAD || fail 'Remote main has new changes. Integrate them before releasing.'
 # Fetch failures stop the script; a missing tag is never inferred from an error.
-remote_tag=$(git ls-remote --tags origin "refs/tags/$tag")
+remote_tag=$(git ls-remote --tags "$gh_remote" "refs/tags/$tag")
 if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
     [[ $(git rev-list -n 1 "$tag") == "$commit" ]] || fail "$tag belongs to another commit. Choose a new version."
 fi
@@ -47,7 +47,10 @@ if [[ -z "$remote_tag" ]]; then
     python3 tests/theme_smoke.py
     [[ -z $(git status --porcelain) ]] || fail 'Source changed during validation.'
     git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1 || git tag -a "$tag" -m "OrchardTop $version"
-    git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag"
+    git push --atomic "$gh_remote" HEAD:refs/heads/main "refs/tags/$tag"
+    if [[ "$gh_remote" != origin ]] && git remote get-url origin >/dev/null 2>&1; then
+        git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag" || echo "Warning: could not push $tag to origin (Forgejo)." >&2
+    fi
 fi
 
 run_id=''
