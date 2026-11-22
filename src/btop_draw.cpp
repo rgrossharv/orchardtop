@@ -566,22 +566,70 @@ namespace Cpu {
 	vector<Draw::Graph> gpu_temp_graphs;
 	vector<Draw::Graph> gpu_mem_graphs;
 
-	static string power_summary(const Power::power_info& power, const int available_width) {
+	//* Power row segments in priority order: charger in, system out, net
+	//* flow, then battery and sensor detail. Narrow boxes drop the tail.
+	struct power_segment { string text; string color; };
+
+	static vector<power_segment> power_segments(const Power::power_info& power) {
 		const auto watts = [](const float value) -> string {
 			return value >= 0.0f ? fmt::format("{:.1f}", value) : "-"s;
 		};
-		// Put battery flow first so narrow layouts cannot truncate it away.
-		string summary = power.battery_power_available
-			? fmt::format("BAT {} {}W", power.battery_watts > 0 ? "OUT" : power.battery_watts < 0 ? "IN" : "IDLE",
-				watts(std::abs(power.battery_watts))) : "BAT N/A";
-		summary += fmt::format(" SMC {}W", watts(power.total_watts));
-		if (power.components_available) {
-			summary += fmt::format(" SUM {}W CPU {} GPU {} ANE {} RAM {} DISP {} MED {} OTHER {}",
-				watts(power.component_total_watts), watts(power.cpu_watts), watts(power.gpu_watts),
-				watts(power.ane_watts), watts(power.dram_watts), watts(power.display_watts),
-				watts(power.media_watts), watts(power.other_watts));
+		vector<power_segment> parts;
+		const bool flow_known = power.adapter_watts >= 0.0f or power.system_watts >= 0.0f or power.adapter_connected;
+		if (flow_known) {
+			string chg;
+			if (power.adapter_watts > 0.0f or (power.adapter_watts == 0.0f and power.adapter_connected))
+				chg = fmt::format("CHG {}W", watts(power.adapter_watts));
+			else if (power.adapter_watts == 0.0f) chg = "CHG off";
+			else chg = "CHG on";
+			if (power.adapter_connected and power.adapter_rated_watts > 0.0f)
+				chg += fmt::format("/{:.0f}W", power.adapter_rated_watts);
+			parts.push_back({chg, ""});
+			parts.push_back({power.system_watts >= 0.0f
+				? fmt::format("SYS {}{}W", power.system_derived ? "~" : "", watts(power.system_watts)) : "SYS -"s, ""});
 		}
-		return uresize(summary, max(1, available_width));
+		if (power.net_available) {
+			const float net = std::abs(power.net_watts) < 0.05f ? 0.0f : power.net_watts;
+			const bool truecolor = Config::getB("truecolor");
+			const string color = net > 0.0f ? Theme::hex_to_color("#30d158", not truecolor)
+				: net < 0.0f ? Theme::hex_to_color("#ff453a", not truecolor) : "";
+			parts.push_back({fmt::format("NET {}{:.1f}W {}", net > 0 ? "+" : net < 0 ? "-" : "",
+				std::abs(net), net > 0 ? "▲" : net < 0 ? "▼" : "="), color});
+		}
+		if (power.battery_power_available) {
+			parts.push_back({fmt::format("BAT {} {}W", power.battery_watts > 0 ? "OUT" : power.battery_watts < 0 ? "IN" : "IDLE",
+				watts(std::abs(power.battery_watts))), ""});
+		}
+		if (power.total_available) parts.push_back({fmt::format("SMC {}W", watts(power.total_watts)), ""});
+		if (power.components_available) {
+			parts.push_back({fmt::format("SUM {}W", watts(power.component_total_watts)), ""});
+			for (const auto& [label, value] : {std::pair{"CPU", power.cpu_watts}, {"GPU", power.gpu_watts}, {"ANE", power.ane_watts},
+					{"RAM", power.dram_watts}, {"DISP", power.display_watts}, {"MED", power.media_watts}, {"OTHER", power.other_watts}})
+				if (value >= 0.0f) parts.push_back({fmt::format("{} {}", label, watts(value)), ""});
+		}
+		if (parts.empty()) parts.push_back({"BAT N/A", ""});
+		return parts;
+	}
+
+	//? Returns the coloured row and its printable width.
+	static std::pair<string, int> power_summary(const Power::power_info& power, const int available_width) {
+		string out;
+		int used = 0;
+		for (const auto& part : power_segments(power)) {
+			const int len = static_cast<int>(ulen(part.text));
+			const int need = len + (used > 0 ? 1 : 0);
+			if (used + need > available_width) {
+				if (used == 0) {
+					const auto cut = uresize(part.text, max(1, available_width));
+					return {cut, static_cast<int>(ulen(cut))};
+				}
+				break;
+			}
+			if (used > 0) out += ' ';
+			out += part.color.empty() ? part.text : part.color + part.text + Theme::c("main_fg");
+			used += need;
+		}
+		return {out, used};
 	}
 
     string draw(
@@ -831,17 +879,19 @@ namespace Cpu {
 	#ifdef GPU_SUPPORT
 		n_gpus_to_show = show_gpu ? (gpus.size() - (gpu_always ? 0 : Gpu::shown)) : 0;
 	#endif
-		const bool show_power_summary = (Power::current_power.components_available or Power::current_power.total_available or Power::current_power.battery_power_available)
+		const auto& pw = Power::current_power;
+		const bool show_power_summary = (pw.components_available or pw.total_available or pw.battery_power_available
+			or pw.net_available or pw.adapter_watts >= 0.0f or pw.system_watts >= 0.0f)
 			and b_width >= 40 and b_height >= 8;
 		auto draw_power_summary = [&] {
 			//? macOS power summary. Component values come from IOReport energy
 			//? deltas. Battery flow and the SMC reading remain separate from
 			//? the component counters.
 			if (show_power_summary) {
-				const auto power_line = power_summary(Power::current_power, b_width - 2);
+				const auto [power_line, power_len] = power_summary(Power::current_power, b_width - 2);
 				const int power_row = b_height - 3 - n_gpus_to_show;
 				out += Mv::to(b_y + power_row, b_x + 1) + Theme::c("main_fg") + Fx::b
-					+ ljust(power_line, b_width - 2) + Fx::ub;
+					+ power_line + string(max(0, b_width - 2 - power_len), ' ') + Fx::ub;
 			}
 		};
 		// Battery ticks do not rebuild or repaint unchanged graphs and meters.
@@ -2373,18 +2423,13 @@ namespace Draw {
 		#else
 			height = max(8, (int)ceil((double)Term::height * (trim(boxes) == "cpu" ? 100 : height_p) / 100));
 		#endif
-		#if defined(__APPLE__) && defined(__arm64__)
-			// Leave one extra interior row for the Apple power summary while
+			// Leave one extra interior row for the power summary while
 			// keeping the normal all-boxes layout usable on small terminals.
-			if (trim(boxes) != "cpu" and height < Term::height) ++height;
-		#endif
+			const bool power_row = Power::row_available();
+			if (power_row and trim(boxes) != "cpu" and height < Term::height) ++height;
 			x = 1;
 			y = cpu_bottom ? Term::height - height + 1 : 1;
-		#if defined(__APPLE__) && defined(__arm64__)
-			constexpr int power_extra_rows = 1;
-		#else
-			constexpr int power_extra_rows = 0;
-		#endif
+			const int power_extra_rows = power_row ? 1 : 0;
 
 		#ifdef GPU_SUPPORT
 			b_columns = max(2, (int)ceil((double)(Shared::coreCount + 1) / (height - gpus_extra_height - 5 - power_extra_rows)));

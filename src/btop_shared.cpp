@@ -36,6 +36,16 @@ using namespace Tools;
 
 namespace Power {
 	power_info current_power;
+
+#if not defined(__linux__)
+	bool row_available() {
+	#if defined(__APPLE__) && defined(__arm64__)
+		return true;
+	#else
+		return false;
+	#endif
+	}
+#endif
 }
 
 namespace Cpu {

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <initializer_list>
+#include "../power_flow.hpp"
 
 namespace Power {
 struct BatteryReading {
@@ -40,5 +41,48 @@ inline std::optional<BatteryReading> read_battery_power(CFDictionaryRef properti
         return BatteryReading{static_cast<double>(current), voltage, watts, static_cast<bool>(CFEqual(key, CFSTR("InstantAmperage")))};
     }
     return std::nullopt;
+}
+
+//* Whole-system flow published by the battery controller on Apple Silicon
+//* (AppleSmartBattery -> PowerTelemetryData, milliwatts).
+struct SystemTelemetry {
+    std::optional<double> system_in_watts;   // SystemPowerIn: charger power delivered to the system.
+    std::optional<double> system_load_watts; // SystemLoad: power the computer is consuming.
+    std::optional<bool> external_connected;  // ExternalConnected.
+    double adapter_rated_watts = -1;         // AdapterDetails.Watts (capacity, not draw).
+};
+
+inline SystemTelemetry read_system_telemetry(CFDictionaryRef properties) {
+    SystemTelemetry out;
+    if (!properties) return out;
+    auto milliwatts = [](CFDictionaryRef dict, CFStringRef key) -> std::optional<double> {
+        auto value = CFDictionaryGetValue(dict, key);
+        if (!value || CFGetTypeID(value) != CFNumberGetTypeID()) return std::nullopt;
+        int64_t raw = 0;
+        if (!CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberSInt64Type, &raw)) return std::nullopt;
+        if (raw > INT32_MAX && raw <= UINT32_MAX) raw -= (int64_t{1} << 32);
+        if (raw < 0 || raw >= 1000000) return std::nullopt; // >= 1 kW is not plausible.
+        return static_cast<double>(raw) / 1000.0;
+    };
+    auto dict_value = [](CFDictionaryRef dict, CFStringRef key) -> CFDictionaryRef {
+        auto value = CFDictionaryGetValue(dict, key);
+        return value && CFGetTypeID(value) == CFDictionaryGetTypeID() ? static_cast<CFDictionaryRef>(value) : nullptr;
+    };
+    if (auto telemetry = dict_value(properties, CFSTR("PowerTelemetryData"))) {
+        out.system_in_watts = milliwatts(telemetry, CFSTR("SystemPowerIn"));
+        out.system_load_watts = milliwatts(telemetry, CFSTR("SystemLoad"));
+    }
+    if (auto ext = CFDictionaryGetValue(properties, CFSTR("ExternalConnected")); ext && CFGetTypeID(ext) == CFBooleanGetTypeID())
+        out.external_connected = CFBooleanGetValue(static_cast<CFBooleanRef>(ext));
+    if (auto adapter = dict_value(properties, CFSTR("AdapterDetails"))) {
+        auto value = CFDictionaryGetValue(adapter, CFSTR("Watts"));
+        int64_t watts = 0;
+        if (value && CFGetTypeID(value) == CFNumberGetTypeID()
+            && CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberSInt64Type, &watts) && watts > 0 && watts < 1000)
+            out.adapter_rated_watts = static_cast<double>(watts);
+    }
+    // Unplugged: SystemPowerIn is meaningless noise if present; force 0 W.
+    if (out.external_connected == false) out.system_in_watts = 0.0;
+    return out;
 }
 }

@@ -54,5 +54,32 @@ int main() {
     assert(Power::decode_smc_power("flt ", bytes, 4) == -1);
     sample = -10;
     assert(Power::decode_smc_power("flt ", bytes, 4) == -1);
-    std::cout << "Battery current, transitions, missing data, and SMC decoding passed\n";
+    {
+        auto props = CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        auto tele = CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        auto adapter = CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        auto set = [](CFMutableDictionaryRef d, CFStringRef k, int64_t v) {
+            auto n = CFNumberCreate(nullptr, kCFNumberSInt64Type, &v);
+            CFDictionarySetValue(d, k, n);
+            CFRelease(n);
+        };
+        assert(!Power::read_system_telemetry(props).system_in_watts);
+        set(tele, CFSTR("SystemPowerIn"), 61200);
+        set(tele, CFSTR("SystemLoad"), 18400);
+        set(adapter, CFSTR("Watts"), 96);
+        CFDictionarySetValue(props, CFSTR("PowerTelemetryData"), tele);
+        CFDictionarySetValue(props, CFSTR("AdapterDetails"), adapter);
+        CFDictionarySetValue(props, CFSTR("ExternalConnected"), kCFBooleanTrue);
+        auto t = Power::read_system_telemetry(props);
+        assert(t.system_in_watts && std::abs(*t.system_in_watts - 61.2) < 1e-9);
+        assert(t.system_load_watts && std::abs(*t.system_load_watts - 18.4) < 1e-9);
+        assert(t.adapter_rated_watts == 96 && t.external_connected == true);
+        auto f = Power::resolve_flow({t.system_in_watts, t.system_load_watts, -40.0, t.external_connected});
+        assert(f.net_available && std::abs(f.net - 42.8) < 1e-9);
+        CFDictionarySetValue(props, CFSTR("ExternalConnected"), kCFBooleanFalse);
+        t = Power::read_system_telemetry(props);
+        assert(t.system_in_watts == 0.0); // Unplugged: nothing enters.
+        CFRelease(adapter); CFRelease(tele); CFRelease(props);
+    }
+    std::cout << "Battery current, transitions, missing data, and SMC decoding passed; system telemetry passed\n";
 }

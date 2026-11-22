@@ -1,17 +1,16 @@
-# OrchardTop v1.4.12
+# OrchardTop v1.4.13
 
-- Refresh Apple Silicon battery watts in both locations about once per second
-  without accelerating process, disk, network, GPU, or graph sampling.
-- Redraw only the two power readouts on battery ticks and avoid copying
-  collector data and graph histories during rendering.
-- Cache thermal service discovery, skip unrelated CPU sensors, fix Core
-  Foundation leaks, and avoid overlapping asynchronous temperature scans.
-- Keep native btop collectors, presets, and swap defaults on Linux and Intel
-  Macs, with the `otop` launcher and apple-dark default theme on all platforms.
-- Remove the Homebrew formula's ARM-only restriction during release updates.
-- Gate publication on an x86_64 Linux build and terminal/theme smoke test.
+- New power-flow readout: `CHG` (watts the charger is delivering), `SYS`
+  (watts the computer is consuming), and `NET` (in minus out, green ▲ when
+  the battery is gaining, red ▼ when it is draining, even on AC).
+- Apple Silicon reads `SystemPowerIn`/`SystemLoad` from the battery
+  controller's power telemetry, plus the charger's rated watts.
+- Linux gains the power row: charger, battery and system flow from
+  `/sys/class/power_supply`, and RAPL CPU/DRAM power when readable.
+  Peripheral (mouse/headset) batteries are ignored.
+- The power row drops trailing detail on narrow boxes instead of cutting the
+  charger, system and net figures, and only lists components that exist.
+- Unit tests cover the flow arithmetic and sysfs parsing.
 
-The hardware controls battery sample cadence; repeated readings are expected.
-Linux battery and total-power enhancements remain future work. Existing custom
-configuration is preserved. The standalone download remains macOS ARM64;
-Homebrew builds the source for the target platform.
+Existing configuration is preserved. The standalone download remains macOS
+ARM64; Homebrew builds the source for the target platform.

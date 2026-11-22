@@ -55,6 +55,7 @@ tab-size = 4
 #include "../btop_log.hpp"
 #include "../btop_shared.hpp"
 #include "../btop_tools.hpp"
+#include "../power_flow.hpp"
 
 #if defined(GPU_SUPPORT)
 	// Redefining C++ keywords fortunately has a warning in clang, however it's unavoidable here
@@ -428,6 +429,111 @@ namespace Shared {
 		Mem::collect();
 
 		Logger::debug("Shared::init() : Initialized.");
+	}
+}
+
+
+namespace Power {
+	namespace {
+		//? ORCHARDTOP_POWER_SUPPLY_ROOT lets tests point at a fake sysfs tree.
+		const fs::path power_supply_root = [] {
+			const char* env = std::getenv("ORCHARDTOP_POWER_SUPPLY_ROOT");
+			return fs::path(env and *env ? env : "/sys/class/power_supply");
+		}();
+		const fs::path powercap_root{"/sys/class/powercap"};
+
+		//* One RAPL energy counter (package or DRAM) and its previous sample.
+		struct RaplZone {
+			fs::path energy;
+			double max_range_uj = 0;
+			double last_uj = -1;
+			bool dram = false;
+		};
+
+		vector<RaplZone> discover_rapl() {
+			vector<RaplZone> zones;
+			std::error_code ec;
+			if (not fs::is_directory(powercap_root, ec)) return zones;
+			for (const auto& entry : fs::directory_iterator(powercap_root, ec)) {
+				const auto dir = entry.path();
+				const auto fname = dir.filename().string();
+				// Top-level packages are intel-rapl:N; DRAM is a sub-zone intel-rapl:N:M.
+				if (not fname.starts_with("intel-rapl:")) continue;
+				const auto name = read_sysfs(dir / "name").value_or("");
+				const bool sub = std::ranges::count(fname, ':') > 1;
+				const bool is_package = not sub and name.starts_with("package");
+				const bool is_dram = sub and name == "dram";
+				if (not is_package and not is_dram) continue;
+				if (not read_sysfs_number(dir / "energy_uj")) continue; // Root-only on most kernels.
+				zones.push_back({dir / "energy_uj", read_sysfs_number(dir / "max_energy_range_uj").value_or(0), -1, is_dram});
+			}
+			return zones;
+		}
+
+		bool any_power_supply() {
+			std::error_code ec;
+			if (not fs::is_directory(power_supply_root, ec)) return false;
+			for (const auto& entry : fs::directory_iterator(power_supply_root, ec)) {
+				const auto type = read_sysfs(entry.path() / "type");
+				const auto scope = read_sysfs(entry.path() / "scope");
+				if (type and not (scope and *scope == "Device")) return true;
+			}
+			return false;
+		}
+
+		vector<RaplZone>& rapl_zones() {
+			static vector<RaplZone> zones = discover_rapl();
+			return zones;
+		}
+	}
+
+	bool row_available() {
+		static const bool available = any_power_supply() or not rapl_zones().empty();
+		return available;
+	}
+
+	void refresh(bool battery_only) {
+		auto& p = current_power;
+
+		//? Charger, battery and whole-system flow from the power_supply class.
+		const auto sys = read_sysfs_power(power_supply_root);
+		const auto flow = resolve_flow(sys.flow);
+		p.battery_power_available = sys.flow.battery_flow.has_value();
+		p.battery_watts = static_cast<float>(sys.flow.battery_flow.value_or(0.0));
+		p.adapter_connected = sys.flow.adapter_connected.value_or(false);
+		p.adapter_rated_watts = static_cast<float>(sys.adapter_rated);
+		p.adapter_watts = static_cast<float>(flow.adapter_in);
+		p.system_watts = static_cast<float>(flow.system_load);
+		p.system_derived = flow.system_derived;
+		p.net_watts = static_cast<float>(flow.net);
+		p.net_available = flow.net_available;
+		if (battery_only) return;
+
+		//? RAPL energy counters: CPU package and DRAM component power.
+		static uint64_t last_us = 0;
+		const uint64_t now_us = static_cast<uint64_t>(get_monotonicTimeUSec());
+		const double seconds = last_us ? (now_us - last_us) / 1e6 : 0.0;
+		last_us = now_us;
+		double cpu = 0, dram = 0;
+		bool got_cpu = false, got_dram = false;
+		for (auto& zone : rapl_zones()) {
+			const auto uj = read_sysfs_number(zone.energy);
+			if (not uj) continue;
+			if (zone.last_uj >= 0 and seconds > 0.05) {
+				double delta = *uj - zone.last_uj;
+				if (delta < 0 and zone.max_range_uj > 0) delta += zone.max_range_uj; // Counter wrapped.
+				if (delta >= 0) {
+					(zone.dram ? dram : cpu) += delta / 1e6 / seconds;
+					(zone.dram ? got_dram : got_cpu) = true;
+				}
+			}
+			zone.last_uj = *uj;
+		}
+		p.cpu_watts = got_cpu ? static_cast<float>(cpu) : -1.0f;
+		p.dram_watts = got_dram ? static_cast<float>(dram) : -1.0f;
+		p.components_available = got_cpu or got_dram;
+		p.component_total_watts = p.components_available
+			? static_cast<float>((got_cpu ? cpu : 0) + (got_dram ? dram : 0)) : -1.0f;
 	}
 }
 
@@ -1237,6 +1343,8 @@ namespace Cpu {
 
 		if (Config::getB("show_battery") and has_battery)
 			current_bat = get_battery();
+
+		if (Power::row_available()) Power::refresh();
 
 		if (Config::getB("show_cpu_watts") and supports_watts)
 			current_cpu.usage_watts = get_cpuConsumptionWatts();

@@ -67,8 +67,9 @@ fresh-install theme. Apple Silicon retains its unified-memory and GPU presets.
 Linux (including Ryzen/NVIDIA systems) and Intel Macs use the native btop
 collectors, standard presets, and swap-disk defaults. Existing custom settings
 are preserved; use a fresh config with `otop -c /path/to/new.conf` to try defaults.
-The Apple power-summary row and extra battery timer only run on Apple Silicon.
-Linux battery/total-power improvements remain future work.
+The power row runs on Apple Silicon and on Linux machines that expose a
+battery, charger, or RAPL energy counters. The once-per-second battery timer is
+Apple Silicon only; Linux refreshes power at the configured `update_ms`.
 
 On Apple Silicon, battery watts in the corner and CPU summary share a reading
 refreshed approximately every second. Expensive collectors and graphs keep the
@@ -116,7 +117,32 @@ theme chosen in the menu is respected.
 
 ## Power and battery estimates
 
-The power row puts battery flow first:
+The power row answers three questions first: how much the charger is
+delivering, how much the computer is using, and whether more energy is coming
+in than going out.
+
+- `CHG 61.2W`: watts the charger is delivering to the computer right now.
+  `/96W` after it is the charger's rated capacity, when reported.
+  `CHG off` means unplugged; `CHG on` means plugged in but not measurable.
+- `SYS 18.4W`: watts the whole computer is consuming. A `~` (`SYS ~18.4W`)
+  means it was derived by energy balance (charger in + battery out) rather
+  than read from one sensor.
+- `NET +42.8W ▲` (green): more energy is coming in than going out; the battery
+  is gaining. `NET -14.3W ▼` (red): the computer uses more than the charger
+  gives and the battery is draining, even if it is plugged in.
+  `NET` is `CHG − SYS` when both are known, otherwise the battery's own flow.
+
+Sources: on Apple Silicon `CHG` and `SYS` are `SystemPowerIn` and `SystemLoad`
+from AppleSmartBattery `PowerTelemetryData`, and the rating is
+`AdapterDetails.Watts`. On Linux they come from `/sys/class/power_supply`
+(adapter `power_now`, battery `power_now` or `current_now × voltage_now`);
+peripheral batteries are ignored. `NET` can differ slightly from `BAT IN`
+because some power is lost as heat while charging. Linux desktops without a
+battery cannot measure wall power; there the row shows RAPL `CPU`/`RAM`
+package power when `/sys/class/powercap/*/energy_uj` is readable (it is
+root-only on most kernels).
+
+The rest of the row shows battery and sensor detail:
 
 - `BAT OUT 12.0W`: the battery is supplying 12 watts to the computer.
 - `BAT IN 24.0W`: 24 watts are entering the battery while charging.
@@ -149,7 +175,7 @@ To check the raw values with the same parser used by the monitor:
 ./scripts/test-power.sh
 ```
 
-## Publish and upgrade v1.4.12
+## Publish and upgrade v1.4.13
 
 The release is prepared locally. From a regular Terminal, run:
 
@@ -159,7 +185,7 @@ cd /path/to/orchardtop
 ./scripts/release-brew.sh
 ```
 
-The version and release notes are prepared for v1.4.12. The script authenticates
+The version and release notes are prepared for v1.4.13. The script authenticates
 through GitHub CLI if necessary, tests and builds with GCC 15, publishes the
 tag, waits for GitHub Actions, and checks the downloaded release checksum. It
 then updates the source formula in `rgrossharv/homebrew-orchardtop`, runs the

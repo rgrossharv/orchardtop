@@ -127,12 +127,26 @@ namespace Power {
 		bool components_available = false;
 		bool battery_power_available = false;
 		bool total_available = false;
+		//? Whole-computer flow. adapter = watts the charger is delivering,
+		//? system = watts the computer is consuming, net = adapter - system
+		//? (positive means more energy coming in than going out).
+		float adapter_watts = -1.0f;
+		float adapter_rated_watts = -1.0f; // Charger capacity, not measured draw.
+		float system_watts = -1.0f;
+		float net_watts = 0.0f;
+		bool net_available = false;
+		bool adapter_connected = false;
+		bool system_derived = false;
 	};
 
 	extern power_info current_power;
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
 	void refresh(bool battery_only = false);
+#endif
+	//* True when this machine can fill the power row (stable for the session).
+	bool row_available();
+#ifdef __APPLE__
 	std::optional<long> estimate_battery_seconds(float watts);
 #endif
 }

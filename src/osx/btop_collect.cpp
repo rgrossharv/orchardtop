@@ -196,6 +196,8 @@ namespace Power {
 		}
 		current_power.battery_watts = 0.0f;
 		current_power.battery_power_available = false;
+		current_power.adapter_watts = current_power.system_watts = current_power.adapter_rated_watts = -1.0f;
+		current_power.net_available = current_power.adapter_connected = current_power.system_derived = false;
 		// Retain the service handle; reconnect after a failed read (e.g. sleep/wake).
 		static IORef battery;
 		if (not battery.get())
@@ -205,10 +207,24 @@ namespace Power {
 		const auto result = IORegistryEntryCreateCFProperties(battery, &raw, kCFAllocatorDefault, 0);
 		CFRef<CFMutableDictionaryRef> properties(raw);
 		if (result != kIOReturnSuccess or not raw) { battery.reset(); return; }
+		FlowInputs inputs;
 		if (const auto reading = read_battery_power(properties)) {
 			current_power.battery_watts = static_cast<float>(reading->watts);
 			current_power.battery_power_available = true;
+			inputs.battery_flow = reading->watts;
 		}
+		const auto telemetry = read_system_telemetry(properties);
+		inputs.adapter_in = telemetry.system_in_watts;
+		inputs.system_load = telemetry.system_load_watts;
+		inputs.adapter_connected = telemetry.external_connected;
+		const auto flow = resolve_flow(inputs);
+		current_power.adapter_connected = telemetry.external_connected.value_or(false);
+		current_power.adapter_rated_watts = static_cast<float>(telemetry.adapter_rated_watts);
+		current_power.adapter_watts = static_cast<float>(flow.adapter_in);
+		current_power.system_watts = static_cast<float>(flow.system_load);
+		current_power.system_derived = flow.system_derived;
+		current_power.net_watts = static_cast<float>(flow.net);
+		current_power.net_available = flow.net_available;
 	}
 
 	std::optional<long> estimate_battery_seconds(const float watts) {
