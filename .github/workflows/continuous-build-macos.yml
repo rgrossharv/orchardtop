@@ -41,8 +41,6 @@ jobs:
     strategy:
       matrix:
         os:
-          - runner: macos-14
-            version: Sonoma
           - runner: macos-15
             version: Sequoia
     runs-on: ${{ matrix.os.runner }}
